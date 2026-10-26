@@ -78,6 +78,37 @@ class Generator(nn.Module):
     def forward(self, input):
         return self.main(input)
 
+# DISCRIMINATOR
+# Binary classification network that takes (1 x 128 x 64) input and outputs final prob
+# Essentially opposite of Generator but uses Conv2D and LeakyReLU with final Sigmoid
+class Discriminator(nn.Module):
+    def __init__(self, ngpu):
+        super(Discriminator, self).__init__()
+        self.ngpu = ngpu
+        self.main = nn.Sequential(
+            # input is ``(nc) x 128 x 64``
+            nn.Conv2d(nc, ndf, 4, 2, 1, bias=False),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. ``(ndf) x 64 x 32``
+            nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 2),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. ``(ndf*2) x 32 x 16``
+            nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 4),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. ``(ndf*4) x 16 x 8``
+            nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
+            nn.BatchNorm2d(ndf * 8),
+            nn.LeakyReLU(0.2, inplace=True),
+            # state size. ``(ndf*8) x 8 x 4``
+            nn.Conv2d(ndf * 8, 1, (8, 4), 1, 0, bias=False),
+            nn.Sigmoid()
+        )
+
+    def forward(self, input):
+        return self.main(input)
+
 # RUNNING MODEL
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -90,3 +121,15 @@ train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
                           num_workers=workers)
 val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True,
                           num_workers=workers)
+
+# Create the generator
+netG = Generator(ngpu).to(device)
+# Apply the ``weights_init`` function to randomly initialize all weights
+#  to ``mean=0``, ``stdev=0.02``.
+netG.apply(weights_init)
+
+# Create the discriminator
+netD = Discriminator(ngpu).to(device)
+# Apply the ``weights_init`` function to randomly initialize all weights
+# like this: ``to mean=0, stdev=0.2``.
+netD.apply(weights_init)
