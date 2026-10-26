@@ -1,5 +1,8 @@
 import time
 import torch
+import torch.nn as nn
+from torch.utils.data import DataLoader
+from hipmri_class import HipMRIDataset
 
 # NOTES - For myself to be removed/moved to README
 # No fully connected or pooling layers are used
@@ -29,3 +32,28 @@ num_epochs = 5 # Number of training epochs
 lr = 0.0002 # Learning rate for optimizers
 beta1 = 0.5 # Beta1 hyperparameter for Adam optimizers
 ngpu = 1 # Number of GPUs available. Use 0 for CPU mode.
+
+# DCGAN paper says model weights are randomly initialised from normal distribution
+# with mean = 0 and stdev = 0.02
+def weights_init(m):
+    classname = m.__class__.__name__
+    if classname.find('Conv') != -1:
+        nn.init.normal(m.weight.data, 0.0, 0.02)
+    elif classname.find('BatchNorm') != -1:
+        nn.init.normal_(m.weight.data, 1.0, 0.02)
+        nn.init.constant_(m.bias.data, 0)
+
+
+
+# RUNNING MODEL
+
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+# Load datasets
+train_set = HipMRIDataset(seg="train")
+val_set = HipMRIDataset(seg="validate")
+
+train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
+                          num_workers=workers)
+val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True,
+                          num_workers=workers)
