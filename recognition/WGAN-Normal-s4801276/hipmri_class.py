@@ -11,8 +11,8 @@ import matplotlib.pyplot as plt
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "HipMRI") 
 # Spatial size of training images. All images will be resized to this
 # size using a transformer.
-IMAGE_SIZE_H = 256
-IMAGE_SIZE_W = 128
+IMAGE_SIZE_H = 128
+IMAGE_SIZE_W = 64
 PERCENTILE = 99.5 # Clipping outlier pixels
 
 class HipMRIDataset(Dataset):
@@ -47,15 +47,3 @@ class HipMRIDataset(Dataset):
 
     def __len__(self):
         return len(self.img_paths)
-
-if __name__ == "__main__":
-    # Quick check: python dataset.py
-    ds = HipMRIDataset(seg="train")
-    idx = [0, 50, len(ds) // 4, len(ds) // 2, 3 * len(ds) // 4]
-    fig, axes = plt.subplots(1, len(idx), figsize=(12, 4))
-    for ax, i in zip(axes, idx):
-        x = ds[i]
-        ax.imshow(x[0], cmap="gray", vmin=-1, vmax=1)
-        ax.set_title(f"{i}: [{x.min():.2f}, {x.max():.2f}]")
-        ax.axis("off")
-    plt.show()
