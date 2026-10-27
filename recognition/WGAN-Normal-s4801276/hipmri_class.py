@@ -41,7 +41,7 @@ class HipMRIDataset(Dataset):
         img = img / max_val * 2 - 1 
 
         # To Tensor
-        img = torch.from_numpy(img).unsqueeze(0) # Add the 1 channel dimension (grayscale)
+        img = torch.from_numpy(img).float().unsqueeze(0) # Add the 1 channel dimension (grayscale)
 
         return img
 
