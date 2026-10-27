@@ -1,8 +1,17 @@
+import os
 import time
 import torch
 import torch.nn as nn
+import torch.optim as optim
 from torch.utils.data import DataLoader
 from hipmri_class import HipMRIDataset
+import torchvision.utils as vutils
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import matplotlib.animation as animation
+from IPython.display import HTML
+import numpy as np
 
 # NOTES - For myself to be removed/moved to README
 # No fully connected or pooling layers are used
@@ -28,10 +37,15 @@ nc = 1 # Number of channels in the training images. Greyscale image is 1
 nz = 100 # Size of z latent vector (i.e. size of generator input)
 ngf = 64 # Size of feature maps in generator
 ndf = 64 # Size of feature maps in discriminator
-num_epochs = 5 # Number of training epochs
+num_epochs = 50 # Number of training epochs
 lr = 0.0002 # Learning rate for optimizers
 beta1 = 0.5 # Beta1 hyperparameter for Adam optimizers
 ngpu = 1 # Number of GPUs available. Use 0 for CPU mode.
+
+OUT_DIR = "outputs/dcgan"
+os.makedirs(os.path.join(OUT_DIR, "samples"), exist_ok=True)
+os.makedirs(os.path.join(OUT_DIR, "checkpoints"), exist_ok=True)
+SAVE_EVERY = 5  # epochs
 
 # DCGAN paper says model weights are randomly initialised from normal distribution
 # with mean = 0 and stdev = 0.02
@@ -111,25 +125,187 @@ class Discriminator(nn.Module):
 
 # RUNNING MODEL
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# Load datasets
-train_set = HipMRIDataset(seg="train")
-val_set = HipMRIDataset(seg="validate")
+    # Load datasets
+    train_set = HipMRIDataset(seg="train")
+    val_set = HipMRIDataset(seg="validate")
 
-train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True,
-                          num_workers=workers)
-val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True,
-                          num_workers=workers)
+    train_loader = DataLoader(train_set, batch_size=batch_size, shuffle=True)
+    val_loader = DataLoader(val_set, batch_size=batch_size, shuffle=True)
 
-# Create the generator
-netG = Generator(ngpu).to(device)
-# Apply the ``weights_init`` function to randomly initialize all weights
-#  to ``mean=0``, ``stdev=0.02``.
-netG.apply(weights_init)
+    # Create the generator
+    netG = Generator(ngpu).to(device)
+    # Apply the ``weights_init`` function to randomly initialize all weights
+    #  to ``mean=0``, ``stdev=0.02``.
+    netG.apply(weights_init)
 
-# Create the discriminator
-netD = Discriminator(ngpu).to(device)
-# Apply the ``weights_init`` function to randomly initialize all weights
-# like this: ``to mean=0, stdev=0.2``.
-netD.apply(weights_init)
+    # Create the discriminator
+    netD = Discriminator(ngpu).to(device)
+    # Apply the ``weights_init`` function to randomly initialize all weights
+    # like this: ``to mean=0, stdev=0.2``.
+    netD.apply(weights_init)
+
+    # Initialize the ``BCELoss`` function
+    criterion = nn.BCELoss()
+
+    # Create batch of latent vectors that we will use to visualize
+    #  the progression of the generator
+    fixed_noise = torch.randn(16, nz, 1, 1, device=device)
+
+    # Establish convention for real and fake labels during training
+    real_label = 1.
+    fake_label = 0.
+
+    # Setup Adam optimizers for both G and D
+    optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
+    optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
+
+    # Training Loop
+
+    # Lists to keep track of progress
+    img_list = []
+    G_losses = []
+    D_losses = []
+    iters = 0
+
+    print("Starting Training Loop...")
+    # For each epoch
+    for epoch in range(num_epochs):
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.time()
+    
+        # For each batch in the dataloader
+        for i, data in enumerate(train_loader, 0):
+
+            ############################
+            # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+            ###########################
+            ## Train with all-real batch
+            netD.zero_grad()
+            # Format batch
+            real_cpu = data.to(device)
+            b_size = real_cpu.size(0)
+            label = torch.full((b_size,), real_label, dtype=torch.float, device=device)
+            # Forward pass real batch through D
+            output = netD(real_cpu).view(-1)
+            # Calculate loss on all-real batch
+            errD_real = criterion(output, label)
+            # Calculate gradients for D in backward pass
+            errD_real.backward()
+            D_x = output.mean().item()
+
+            ## Train with all-fake batch
+            # Generate batch of latent vectors
+            noise = torch.randn(b_size, nz, 1, 1, device=device)
+            # Generate fake image batch with G
+            fake = netG(noise)
+            label.fill_(fake_label)
+            # Classify all fake batch with D
+            output = netD(fake.detach()).view(-1)
+            # Calculate D's loss on the all-fake batch
+            errD_fake = criterion(output, label)
+            # Calculate the gradients for this batch, accumulated (summed) with previous gradients
+            errD_fake.backward()
+            D_G_z1 = output.mean().item()
+            # Compute error of D as sum over the fake and the real batches
+            errD = errD_real + errD_fake
+            # Update D
+            optimizerD.step()
+
+            ############################
+            # (2) Update G network: maximize log(D(G(z)))
+            ###########################
+            netG.zero_grad()
+            label.fill_(real_label)  # fake labels are real for generator cost
+            # Since we just updated D, perform another forward pass of all-fake batch through D
+            output = netD(fake).view(-1)
+            # Calculate G's loss based on this output
+            errG = criterion(output, label)
+            # Calculate gradients for G
+            errG.backward()
+            D_G_z2 = output.mean().item()
+            # Update G
+            optimizerG.step()
+
+            # Output training stats
+            if i % 50 == 0:
+                print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
+                    % (epoch, num_epochs, i, len(train_loader),
+                        errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
+
+            # Save Losses for plotting later
+            G_losses.append(errG.item())
+            D_losses.append(errD.item())
+
+            # Check how the generator is doing by saving G's output on fixed_noise
+            if (iters % 500 == 0) or ((epoch == num_epochs-1) and (i == len(train_loader)-1)):
+                with torch.no_grad():
+                    fake = netG(fixed_noise).detach().cpu()
+                img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
+
+            iters += 1
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        epoch_times.append(time.time() - t0)
+        print(f"Epoch {epoch + 1} took {epoch_times[-1]:.1f} s")
+
+        # Checkpoint every SAVE_EVERY epochs and at the final epoch
+        if (epoch + 1) % SAVE_EVERY == 0 or epoch == num_epochs - 1:
+            torch.save({
+                "epoch": epoch + 1,
+                "netG": netG.state_dict(),
+                "netD": netD.state_dict(),
+                "optG": optimizerG.state_dict(),
+                "optD": optimizerD.state_dict(),
+                "G_losses": G_losses,
+                "D_losses": D_losses,
+            }, os.path.join(OUT_DIR, "checkpoints", f"dcgan_epoch_{epoch + 1:03d}.pt"))
+            print(f"Saved checkpoint at epoch {epoch + 1}")
+
+    peak_vram = torch.cuda.max_memory_allocated() / 2**20 if device.type == "cuda" else float("nan")
+
+    # Generation (inference) time for 64 images
+    netG.eval()
+    with torch.no_grad():
+        z = torch.randn(64, nz, 1, 1, device=device)
+        netG(z)                                    # warm-up run
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.time()
+        netG(z)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        gen_ms = (time.time() - t0) * 1000
+
+    summary = (f"Device: {gpu_name}\n"
+            f"G params: {n_params_G:,} | D params: {n_params_D:,}\n"
+            f"Peak VRAM: {peak_vram:.0f} MB\n"
+            f"Mean epoch time: {sum(epoch_times) / len(epoch_times):.1f} s "
+            f"(total {sum(epoch_times) / 60:.1f} min for {num_epochs} epochs)\n"
+            f"Generate 64 images: {gen_ms:.1f} ms")
+    print(summary)
+    with open(os.path.join(OUT_DIR, "resources.txt"), "w") as f:
+        f.write(summary)
+
+    # Loss versus training iteration
+    plt.figure(figsize=(10,5))
+    plt.title("Generator and Discriminator Loss During Training")
+    plt.plot(G_losses,label="G")
+    plt.plot(D_losses,label="D")
+    plt.xlabel("iterations")
+    plt.ylabel("Loss")
+    plt.legend()
+    plt.savefig("dcgan_losses.png", dpi=150)
+    plt.close()
+
+    # Visualisation of Generator Progression
+    fig = plt.figure(figsize=(8,8))
+    plt.axis("off")
+    ims = [[plt.imshow(np.transpose(i,(1,2,0)), animated=True)] for i in img_list]
+    ani = animation.ArtistAnimation(fig, ims, interval=1000, repeat_delay=1000, blit=True)
+
+    ani.save("dcgan_progress.gif", writer="pillow", fps=2)
