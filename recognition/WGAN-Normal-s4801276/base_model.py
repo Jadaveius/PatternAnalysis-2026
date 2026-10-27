@@ -166,7 +166,6 @@ if __name__ == "__main__":
     gpu_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"
     n_params_G = sum(p.numel() for p in netG.parameters())
     n_params_D = sum(p.numel() for p in netD.parameters())
-    print(f"Device: {gpu_name} | G params: {n_params_G:,} | D params: {n_params_D:,}")
 
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats()
@@ -250,12 +249,6 @@ if __name__ == "__main__":
             G_losses.append(errG.item())
             D_losses.append(errD.item())
 
-            # Check how the generator is doing by saving G's output on fixed_noise
-            if (iters % 500 == 0) or ((epoch == num_epochs-1) and (i == len(train_loader)-1)):
-                with torch.no_grad():
-                    fake = netG(fixed_noise).detach().cpu()
-                img_list.append(vutils.make_grid(fake, padding=2, normalize=True))
-
             iters += 1
 
         if device.type == "cuda":
@@ -265,6 +258,38 @@ if __name__ == "__main__":
 
     # Peak VRAM required by the DCGAN
     peak_vram = torch.cuda.max_memory_allocated() / 2**20 if device.type == "cuda" else float("nan")
+
+    # Sample grid from the fixed noise (same z every time, so grids are comparable)
+    with torch.no_grad():
+        fake = netG(fixed_noise).cpu()
+    grid = vutils.make_grid(fake, nrow=8, padding=2, normalize=True, value_range=(-1, 1))
+    img_list.append(grid)  # for the animation
+    vutils.save_image(grid, os.path.join(OUT_DIR, "samples", f"epoch_{epoch + 1:03d}.png"))
+
+    # Generation (inference) time for 64 images
+    netG.eval()
+    with torch.no_grad():
+        z = torch.randn(64, nz, 1, 1, device=device)
+        netG(z)                                    # warm-up run
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.time()
+        netG(z)
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        gen_ms = (time.time() - t0) * 1000
+
+    summary = (f"Device: {gpu_name}\n"
+                f"G params: {n_params_G:,} | D params: {n_params_D:,}\n"
+                f"Peak VRAM: {peak_vram:.0f} MB\n"
+                f"Mean epoch time: {sum(epoch_times) / len(epoch_times):.1f} s "
+                f"(total {sum(epoch_times) / 60:.1f} min for {num_epochs} epochs)\n",
+                f"Generate 64 images: {gen_ms:.1f} ms")
+    print(summary)
+
+    # Save text summary for later
+    with open(os.path.join(OUT_DIR, "resources.txt"), "w") as f:
+        f.write(summary)
 
     # Loss versus training iteration
     plt.figure(figsize=(10,5))
