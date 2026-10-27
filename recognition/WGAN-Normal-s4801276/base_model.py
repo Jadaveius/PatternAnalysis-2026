@@ -162,12 +162,22 @@ if __name__ == "__main__":
     optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
     optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
 
+    # Device/param stats since I'm running on my own PC
+    gpu_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"
+    n_params_G = sum(p.numel() for p in netG.parameters())
+    n_params_D = sum(p.numel() for p in netD.parameters())
+    print(f"Device: {gpu_name} | G params: {n_params_G:,} | D params: {n_params_D:,}")
+
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+
     # Training Loop
 
     # Lists to keep track of progress
     img_list = []
     G_losses = []
     D_losses = []
+    epoch_times = [] # Time taken for each epoch
     iters = 0
 
     print("Starting Training Loop...")
@@ -250,46 +260,11 @@ if __name__ == "__main__":
 
         if device.type == "cuda":
             torch.cuda.synchronize()
-        epoch_times.append(time.time() - t0)
-        print(f"Epoch {epoch + 1} took {epoch_times[-1]:.1f} s")
+            epoch_times.append(time.time() - t0)
+            print(f"Epoch {epoch + 1} took {epoch_times[-1]:.1f} s")
 
-        # Checkpoint every SAVE_EVERY epochs and at the final epoch
-        if (epoch + 1) % SAVE_EVERY == 0 or epoch == num_epochs - 1:
-            torch.save({
-                "epoch": epoch + 1,
-                "netG": netG.state_dict(),
-                "netD": netD.state_dict(),
-                "optG": optimizerG.state_dict(),
-                "optD": optimizerD.state_dict(),
-                "G_losses": G_losses,
-                "D_losses": D_losses,
-            }, os.path.join(OUT_DIR, "checkpoints", f"dcgan_epoch_{epoch + 1:03d}.pt"))
-            print(f"Saved checkpoint at epoch {epoch + 1}")
-
+    # Peak VRAM required by the DCGAN
     peak_vram = torch.cuda.max_memory_allocated() / 2**20 if device.type == "cuda" else float("nan")
-
-    # Generation (inference) time for 64 images
-    netG.eval()
-    with torch.no_grad():
-        z = torch.randn(64, nz, 1, 1, device=device)
-        netG(z)                                    # warm-up run
-        if device.type == "cuda":
-            torch.cuda.synchronize()
-        t0 = time.time()
-        netG(z)
-        if device.type == "cuda":
-            torch.cuda.synchronize()
-        gen_ms = (time.time() - t0) * 1000
-
-    summary = (f"Device: {gpu_name}\n"
-            f"G params: {n_params_G:,} | D params: {n_params_D:,}\n"
-            f"Peak VRAM: {peak_vram:.0f} MB\n"
-            f"Mean epoch time: {sum(epoch_times) / len(epoch_times):.1f} s "
-            f"(total {sum(epoch_times) / 60:.1f} min for {num_epochs} epochs)\n"
-            f"Generate 64 images: {gen_ms:.1f} ms")
-    print(summary)
-    with open(os.path.join(OUT_DIR, "resources.txt"), "w") as f:
-        f.write(summary)
 
     # Loss versus training iteration
     plt.figure(figsize=(10,5))
