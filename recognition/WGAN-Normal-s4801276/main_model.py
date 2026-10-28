@@ -2,6 +2,7 @@ import os
 import time
 import torch
 import torch.nn as nn
+from torch.nn import Module
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from hipmri_class import HipMRIDataset
@@ -39,9 +40,11 @@ ngf = 64 # Size of feature maps in generator
 ndf = 64 # Size of feature maps in discriminator
 num_epochs = 50 # Number of training epochs
 lr = 0.0002 # Learning rate for optimizers
-beta1 = 0.5 # Beta1 hyperparameter for Adam optimizers
+beta1 = 0 # Beta1 hyperparameter for Adam optimisers
+beta2 = 0.9 # Beta2 hyperparameter for Adaom optimisers
 ngpu = 1 # Number of GPUs available. Use 0 for CPU mode.
 n_critic = 5 # Number of times critic runs before generator
+lambda_gp = 10 # Multiplcative scalar for gradient penalty
 
 OUT_DIR = "outputs/dcgan"
 os.makedirs(os.path.join(OUT_DIR, "samples"), exist_ok=True)
@@ -63,7 +66,7 @@ def weights_init(m):
 # Strided 2-dim convolutional transpose layers
 # MUST batchnorm after conv to be DCGAN
 
-class Generator(nn.Module):
+class Generator(Module):
     def __init__(self, ngpu):
         super(Generator, self).__init__()
         self.ngpu = ngpu
@@ -96,7 +99,7 @@ class Generator(nn.Module):
 # DISCRIMINATOR
 # Binary classification network that takes (1 x 128 x 64) input and outputs final prob
 # Essentially opposite of Generator but uses Conv2D and LeakyReLU with final Sigmoid
-class Discriminator(nn.Module):
+class Discriminator(Module):
     def __init__(self, ngpu):
         super(Discriminator, self).__init__()
         self.ngpu = ngpu
@@ -118,7 +121,7 @@ class Discriminator(nn.Module):
             nn.LeakyReLU(0.2, inplace=True),
             # state size. ``(ndf*8) x 8 x 4``
             nn.Conv2d(ndf * 8, 1, (8, 4), 1, 0, bias=False),
-            nn.Sigmoid()
+            # nn.Sigmoid()
         )
 
     def forward(self, input):
@@ -148,9 +151,6 @@ if __name__ == "__main__":
     # like this: ``to mean=0, stdev=0.2``.
     netD.apply(weights_init)
 
-    # Initialize the ``BCELoss`` function
-    criterion = nn.BCELoss()
-
     # Create batch of latent vectors that we will use to visualize
     #  the progression of the generator
     fixed_noise = torch.randn(16, nz, 1, 1, device=device)
@@ -160,8 +160,8 @@ if __name__ == "__main__":
     fake_label = 0.
 
     # Setup Adam optimizers for both G and D
-    optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, 0.999))
-    optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, 0.999))
+    optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, beta2))
+    optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, beta2))
 
     # Device/param stats since I'm running on my own PC
     gpu_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"
@@ -215,6 +215,9 @@ if __name__ == "__main__":
             label.fill_(fake_label)
             # Classify all fake batch with D
             output = netD(fake.detach()).view(-1)
+            # Get the Wasserstian loss (different for critic and gen)
+            loss_D= netD(fake.detach()).mean() - netD(real).mean() + lambda_gp *
+            loss_G =
             # Calculate D's loss on the all-fake batch
             errD_fake = criterion(output, label)
             # Calculate the gradients for this batch, accumulated (summed) with previous gradients
@@ -226,7 +229,7 @@ if __name__ == "__main__":
             optimizerD.step()
 
             # The generator is only updated for every 5 iterations of the critic,
-            # so the generator only gets (i_max / 5) iterations in an epoch
+            # so the generator only gets (i_max / n_critic) iterations in an epoch
             if (i % n_critic == 0):
                 ############################
                 # (2) Update G network: maximize log(D(G(z)))
