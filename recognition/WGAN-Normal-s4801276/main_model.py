@@ -41,6 +41,7 @@ num_epochs = 50 # Number of training epochs
 lr = 0.0002 # Learning rate for optimizers
 beta1 = 0.5 # Beta1 hyperparameter for Adam optimizers
 ngpu = 1 # Number of GPUs available. Use 0 for CPU mode.
+n_critic = 5 # Number of times critic runs before generator
 
 OUT_DIR = "outputs/dcgan"
 os.makedirs(os.path.join(OUT_DIR, "samples"), exist_ok=True)
@@ -224,23 +225,26 @@ if __name__ == "__main__":
             # Update D
             optimizerD.step()
 
-            ############################
-            # (2) Update G network: maximize log(D(G(z)))
-            ###########################
-            netG.zero_grad()
-            label.fill_(real_label)  # fake labels are real for generator cost
-            # Since we just updated D, perform another forward pass of all-fake batch through D
-            output = netD(fake).view(-1)
-            # Calculate G's loss based on this output
-            errG = criterion(output, label)
-            # Calculate gradients for G
-            errG.backward()
-            D_G_z2 = output.mean().item()
-            # Update G
-            optimizerG.step()
+            # The generator is only updated for every 5 iterations of the critic,
+            # so the generator only gets (i_max / 5) iterations in an epoch
+            if (i % n_critic == 0):
+                ############################
+                # (2) Update G network: maximize log(D(G(z)))
+                ###########################
+                netG.zero_grad()
+                label.fill_(real_label)  # fake labels are real for generator cost
+                # Since we just updated D, perform another forward pass of all-fake batch through D
+                output = netD(fake).view(-1)
+                # Calculate G's loss based on this output
+                errG = criterion(output, label)
+                # Calculate gradients for G
+                errG.backward()
+                D_G_z2 = output.mean().item()
+                # Update G
+                optimizerG.step()
 
             # Output training stats
-            if i % 50 == 0:
+            if i % num_epochs == 0:
                 print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
                     % (epoch, num_epochs, i, len(train_loader),
                         errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
