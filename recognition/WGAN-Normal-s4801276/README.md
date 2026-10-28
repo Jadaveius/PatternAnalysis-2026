@@ -10,7 +10,7 @@ BASED ON RESULTS OF REPORT (like exec summary)
 (optional table of contents linking to the sections below)
 
 ## 1. Feasibility Review
-Topic 2.4 - Image Generation: Synthetic Medical Cohorts and Privacy
+**Topic 2.4 - Image Generation: Synthetic Medical Cohorts and Privacy**
 ### 1.1 User Need, Scope and Acceptance Criteria
 The purpose of this research is to provide additional medical imaging resources to medical researchers investigating 2D pelvic MRI slices. Through WGAN generation, new slices could be synthesised which replicate realistic tissue structures and remove the risk of violating patient privacy laws such as HIPPA and GDPR. Final intentions for this project are to determine whether the model can produce synthetic images that are safe, structurally sound and could plausibly be used for training. To address the fidelity vs memorisation vs privacy dilemma, testable acceptance criteria of the final model include:
 - Structural Similarity Index of greater than 0.6 (SSIM > 0.6) across synthesised cohorts against reference anatomical slices.
@@ -34,6 +34,7 @@ An initial data audit was completed using `data_audit.py`, which can be summaris
 | Intensity Range (Sampled) | 0 – 1,150 | 0 – 565  | 0 – 617 |
 | Median Per-Slice | 387.5 | 373 | 424 |
 | Near-Empty Slices | 0% | 0% | 0% |
+
 An analysis of this preliminary data audit can be found in Section 3: Data.
 ### 1.4 Risk, Budget and Fallback
 The key technical risks associated with the project are:
