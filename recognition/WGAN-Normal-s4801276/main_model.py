@@ -44,6 +44,7 @@ ngpu = 1 # Number of GPUs available. Use 0 for CPU mode.
 n_critic = 5 # Number of times critic runs before generator
 lambda_gp = 10 # Multiplcative scalar for gradient penalty
 ema_decay = 0.999 # smoothing hyperparameter (how much weight for past values)
+decay_start = num_epochs // 2
 
 OUT_DIR = "outputs/wgan_gp_ema"
 os.makedirs(os.path.join(OUT_DIR, "samples"), exist_ok=True)
@@ -59,6 +60,10 @@ def weights_init(m):
     elif classname.find('BatchNorm') != -1:
         nn.init.normal_(m.weight.data, 1.0, 0.02)
         nn.init.constant_(m.bias.data, 0)
+
+# Adjust LR overtime
+def lr_lambda(epoch):
+    return 1.0 if epoch < decay_start else (num_epochs - epoch) / (num_epochs - decay_start)
 
 # GENERATOR
 # Latent space vector (z) must be mapped to training images (1 x 128 x 64)
@@ -164,6 +169,9 @@ if __name__ == "__main__":
     # Setup Adam optimizers for both G and D
     optimiserD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, beta2))
     optimiserG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, beta2))
+
+    schedulerD = optim.lr_scheduler.LambdaLR(optimiserD, lr_lambda)
+    schedulerG = optim.lr_scheduler.LambdaLR(optimiserG, lr_lambda)
 
     # Device/param stats since I'm running on my own PC
     gpu_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"
