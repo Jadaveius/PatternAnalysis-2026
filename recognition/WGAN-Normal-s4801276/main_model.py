@@ -100,6 +100,7 @@ class Generator(Module):
 # Binary classification network that takes (1 x 128 x 64) input and outputs final prob
 # Essentially opposite of Generator but uses Conv2D and LeakyReLU
 # NO FINAL SIGMOID unlike DCGAN because we want raw score, not probability
+# NO BATCH NORM as it creates correlations between samples in the same batch
 class Discriminator(Module):
     def __init__(self, ngpu):
         super(Discriminator, self).__init__()
@@ -226,19 +227,17 @@ if __name__ == "__main__":
 
             # The generator is only updated for every 5 iterations of the critic,
             # so the generator only gets (i_max / n_critic) iterations in an epoch
-            if (i % n_critic == 0):
+            if (i + 1) % n_critic == 0:
                 ############################
-                # (2) Update G network: maximize log(D(G(z)))
+                # (2) Update G network: minimise -D(G(z))
                 ###########################
                 netG.zero_grad()
-                label.fill_(real_label)  # fake labels are real for generator cost
-                # Since we just updated D, perform another forward pass of all-fake batch through D
-                output = netD(fake).view(-1)
-                # Calculate G's loss based on this output
-                errG = criterion(output, label)
-                # Calculate gradients for G
-                errG.backward()
-                D_G_z2 = output.mean().item()
+
+                # Generate batch of latent vectors
+                noise = torch.randn(b_size, nz, 1, 1, device=device)
+                # Get the Wasserstian loss (for critic)
+                loss_G = -netD(netG(noise)).mean()
+                loss_G.backward()  # Calculate gradients for G
                 # Update G
                 optimiserG.step()
 
@@ -249,8 +248,8 @@ if __name__ == "__main__":
                         errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
 
             # Save Losses for plotting later
-            G_losses.append(errG.item())
-            D_losses.append(errD.item())
+            G_losses.append(loss_G.item())
+            D_losses.append(loss_D.item())
 
             iters += 1
 
