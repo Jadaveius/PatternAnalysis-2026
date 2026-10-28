@@ -26,6 +26,8 @@ The chosen model is the WGAN-GP which is Normal difficulty, on HipMRI 2D slices 
 - Builds directly on course concepts involving DCGANs and WGANs (both covered in Week 9 lecture content) as well as loss/activation functions, hyperparameters and model evaluation methods.
 ### 1.3 Preliminary Feasibility Evidence
 An initial data audit was completed using `data_audit.py`, which can be summarised into this table:
+<div align="center">
+
 | **Measure** | **Train** | **Validate** | **Test** |
 | --- | :---: | :---: | :---: |
 | Slices | 11,460 | 660 | 540 |
@@ -35,7 +37,9 @@ An initial data audit was completed using `data_audit.py`, which can be summaris
 | Median Per-Slice | 387.5 | 373 | 424 |
 | Near-Empty Slices | 0% | 0% | 0% |
 
-An analysis of this preliminary data audit can be found in Section 3: Data.
+</div>
+
+An analysis of this preliminary data audit can be found in **Section 3: Data**.
 ### 1.4 Risk, Budget and Fallback
 The key technical risks associated with the project are:
 - WGAN has a risk of unstable training results if a momentum-based optimiser (Adam) or high learning rates are used, placing some restrictions on model architecture and tuning parameters.
@@ -60,6 +64,11 @@ what changed from DCGAN and why.
 HipMRI 2D slices; audit table (slice counts, patients, shapes, intensities);
 patient-level leakage check.
 ### 3.2 Pre-processing
+- **Centre Crop:** In order to avoid dropping any data from the training set, a centre crop was performed to resize the 60 outlying 256x144 images that were found during the data audit.
+- **Scaling to [-1, 1]:** Due to the end of the generator architecture using a tanh activation function, intensity values must be min-max scaled to a range of [-1, 1] to be able to pass through it.
+- **99.5th-Percentile Clipping:** The data audit revealed the training data featured intensity values up to 1,150, however, the median highest-intensity value seen in training images was only 387.5. Since the data is min-max scaled from [-1, 1], any training scans that feature outlier high-intensity values will define the top of the scaling range for that slice. This would mean that the other lower-intensity pixels would be scaled down and squashed into a narrower, darker band of intensity values. To prevent this, intensity values for images are clipped to the 99.5th percentile.
+- **Downsampling to 128x64:** The network architecture in the DCGAN/WGAN papers was designed around a 64x64, so using the full resolution image would require an additional layer in both the generator and critic networks. Additionaly, downsampling reduces the total pixel count of the images, lowering expected memory usage and training time. While the 2:1 aspect ratio is preserved, it is expected that this pre-processing decision will prevent the generator from learning some of the finer details of the data.
+
 Centre crop, 99.5th-percentile clipping, scaling to [-1, 1], resize to 128×64,
 with justification for each.
 ### 3.3 Splits
