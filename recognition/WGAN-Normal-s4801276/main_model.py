@@ -1,5 +1,6 @@
 import os
 import time
+import copy
 import torch
 import torch.nn as nn
 from torch.nn import Module
@@ -42,8 +43,9 @@ beta2 = 0.9 # Beta2 hyperparameter for Adaom optimisers
 ngpu = 1 # Number of GPUs available. Use 0 for CPU mode.
 n_critic = 5 # Number of times critic runs before generator
 lambda_gp = 10 # Multiplcative scalar for gradient penalty
+ema_decay = 0.999 # smoothing hyperparameter (how much weight for past values)
 
-OUT_DIR = "outputs/wgan_gp"
+OUT_DIR = "outputs/wgan_gp_ema"
 os.makedirs(os.path.join(OUT_DIR, "samples"), exist_ok=True)
 os.makedirs(os.path.join(OUT_DIR, "checkpoints"), exist_ok=True)
 SAVE_EVERY = 10  # epochs
@@ -53,7 +55,7 @@ SAVE_EVERY = 10  # epochs
 def weights_init(m):
     classname = m.__class__.__name__
     if classname.find('Conv') != -1:
-        nn.init.normal(m.weight.data, 0.0, 0.02)
+        nn.init.normal_(m.weight.data, 0.0, 0.02)
     elif classname.find('BatchNorm') != -1:
         nn.init.normal_(m.weight.data, 1.0, 0.02)
         nn.init.constant_(m.bias.data, 0)
@@ -142,6 +144,8 @@ if __name__ == "__main__":
     # Apply the ``weights_init`` function to randomly initialize all weights
     #  to ``mean=0``, ``stdev=0.02``.
     netG.apply(weights_init)
+    emaG = copy.deepcopy(netG).eval()
+    emaG.requires_grad_(False)
 
     # Create the discriminator
     netD = Discriminator(ngpu).to(device)
@@ -172,7 +176,6 @@ if __name__ == "__main__":
     # Training Loop
 
     # Lists to keep track of progress
-    img_list = []
     G_losses = []
     D_losses = []
     W_estimates = []
@@ -243,6 +246,14 @@ if __name__ == "__main__":
                 # Update G
                 optimiserG.step()
 
+                # Update EMA G
+                # EMA(t) = B*EMA(t - 1) + (1 - B)*G(t)
+                with torch.no_grad():
+                    for ema_param, p in zip(emaG.parameters(), netG.parameters()):
+                        ema_param.mul_(ema_decay).add_(p, alpha=1 - ema_decay)
+                    for ema_buf, b in zip(emaG.buffers(), netG.buffers()):
+                        ema_buf.copy_(b)
+
                 G_losses.append(loss_G.item()) # Save Losses for plotting later
 
             # Output training stats
@@ -260,10 +271,16 @@ if __name__ == "__main__":
 
          # Sample grid from the fixed noise (same z every time, so grids are comparable)
         with torch.no_grad():
-            fake = netG(fixed_noise).cpu()
-        grid = vutils.make_grid(fake, nrow=8, padding=2, normalize=True, value_range=(-1, 1))
-        img_list.append(grid)  # for the animation
+            netG.eval()
+            fake_raw = netG(fixed_noise).cpu()
+            fake_ema = emaG(fixed_noise).cpu()
+            netG.train()
+
+        grid = vutils.make_grid(fake_ema, nrow=8, padding=2, normalize=True, value_range=(-1, 1))
         vutils.save_image(grid, os.path.join(OUT_DIR, "samples", f"epoch_{epoch + 1:03d}.png"))
+
+        grid_raw = vutils.make_grid(fake_raw, nrow=8, padding=2, normalize=True, value_range=(-1, 1))
+        vutils.save_image(grid_raw, os.path.join(OUT_DIR, "samples", f"epoch_{epoch + 1:03d}_raw.png"))
 
         # Checkpoint every SAVE_EVERY epochs and at the final epoch
         if (epoch + 1) % SAVE_EVERY == 0 or epoch == num_epochs - 1:
@@ -273,6 +290,7 @@ if __name__ == "__main__":
                 "netD": netD.state_dict(),
                 "optG": optimiserG.state_dict(),
                 "optD": optimiserD.state_dict(),
+                "emaG": emaG.state_dict(),
                 "G_losses": G_losses,
                 "D_losses": D_losses,
                 "GP_values": GP_values,
@@ -287,11 +305,11 @@ if __name__ == "__main__":
     netG.eval()
     with torch.no_grad():
         z = torch.randn(64, nz, 1, 1, device=device)
-        netG(z)                                    # warm-up run
+        emaG(z)                                    # warm-up run
         if device.type == "cuda":
             torch.cuda.synchronize()
         t0 = time.time()
-        netG(z)
+        emaG(z)
         if device.type == "cuda":
             torch.cuda.synchronize()
         gen_ms = (time.time() - t0) * 1000
