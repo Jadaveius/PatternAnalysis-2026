@@ -61,19 +61,18 @@ what changed from DCGAN and why.
 
 ## 3. Data
 ### 3.1 Dataset & Data Audit
-HipMRI 2D slices; audit table (slice counts, patients, shapes, intensities);
-patient-level leakage check.
+The provided dataset is already split into separate training, validation and testing sets. In this case, an audit was done on the provided sets to ensure they were appropriately split with usable data (i.e. no patient leakage between sets and no near-empty/dark images) as seen in **Section 1.3**. The audit found no patient leakage between sets as well as 0 near-empty slices in the provided files, suggesting the test/train/split was valid. In addition to validating the dataset's usability for the task, the audit results were used to help determine what kind of pre-processing should be completed on the dataset.
 ### 3.2 Pre-processing
 - **Centre Crop:** In order to avoid dropping any data from the training set, a centre crop was performed to resize the 60 outlying 256x144 images that were found during the data audit.
 - **Scaling to [-1, 1]:** Due to the end of the generator architecture using a tanh activation function, intensity values must be min-max scaled to a range of [-1, 1] to be able to pass through it.
 - **99.5th-Percentile Clipping:** The data audit revealed the training data featured intensity values up to 1,150, however, the median highest-intensity value seen in training images was only 387.5. Since the data is min-max scaled from [-1, 1], any training scans that feature outlier high-intensity values will define the top of the scaling range for that slice. This would mean that the other lower-intensity pixels would be scaled down and squashed into a narrower, darker band of intensity values. To prevent this, intensity values for images are clipped to the 99.5th percentile.
 - **Downsampling to 128x64:** The network architecture in the DCGAN/WGAN papers was designed around a 64x64, so using the full resolution image would require an additional layer in both the generator and critic networks. Additionaly, downsampling reduces the total pixel count of the images, lowering expected memory usage and training time. While the 2:1 aspect ratio is preserved, it is expected that this pre-processing decision will prevent the generator from learning some of the finer details of the data.
 
-Centre crop, 99.5th-percentile clipping, scaling to [-1, 1], resize to 128×64,
-with justification for each.
 ### 3.3 Splits
-Train / validate / test usage and why: train for training, validate for model
-selection and tuning, test only for final evaluation.
+**Train (91%) / Validate (5%) / Test (4%) Split**
+- **Train:** For fitting the generator and critic (learning the weights).
+- **Validate:** KID verification is done against validation slices, with the intent of helping to tune the WGAN-GP.
+- **Test:** Used with the final model, checking SSIM, KID/FID and memorisation audit acceptance criteria are met.
 
 ## 4. Experiments
 ### 4.1 Training Setup
