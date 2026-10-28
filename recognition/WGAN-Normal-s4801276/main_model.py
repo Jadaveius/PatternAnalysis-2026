@@ -39,7 +39,7 @@ nz = 100 # Size of z latent vector (i.e. size of generator input)
 ngf = 64 # Size of feature maps in generator
 ndf = 64 # Size of feature maps in discriminator
 num_epochs = 50 # Number of training epochs
-lr = 0.0002 # Learning rate for optimizers
+lr = 0.0001 # Learning rate for optimizers
 beta1 = 0 # Beta1 hyperparameter for Adam optimisers
 beta2 = 0.9 # Beta2 hyperparameter for Adaom optimisers
 ngpu = 1 # Number of GPUs available. Use 0 for CPU mode.
@@ -160,8 +160,8 @@ if __name__ == "__main__":
     fake_label = 0.
 
     # Setup Adam optimizers for both G and D
-    optimizerD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, beta2))
-    optimizerG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, beta2))
+    optimiserD = optim.Adam(netD.parameters(), lr=lr, betas=(beta1, beta2))
+    optimiserG = optim.Adam(netG.parameters(), lr=lr, betas=(beta1, beta2))
 
     # Device/param stats since I'm running on my own PC
     gpu_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"
@@ -189,44 +189,38 @@ if __name__ == "__main__":
     
         # For each batch in the dataloader
         for i, data in enumerate(train_loader, 0):
-
+            
             ############################
-            # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+            # (1) Update D network: D(G(z)) - D(x) + lambda_gp*(norm(grad(D(x_hat), x_hat)) - 1)^2
             ###########################
             ## Train with all-real batch
             netD.zero_grad()
             # Format batch
             real_cpu = data.to(device)
             b_size = real_cpu.size(0)
-            label = torch.full((b_size,), real_label, dtype=torch.float, device=device)
-            # Forward pass real batch through D
-            output = netD(real_cpu).view(-1)
-            # Calculate loss on all-real batch
-            errD_real = criterion(output, label)
-            # Calculate gradients for D in backward pass
-            errD_real.backward()
-            D_x = output.mean().item()
-
+            
             ## Train with all-fake batch
             # Generate batch of latent vectors
             noise = torch.randn(b_size, nz, 1, 1, device=device)
             # Generate fake image batch with G
-            fake = netG(noise)
-            label.fill_(fake_label)
-            # Classify all fake batch with D
-            output = netD(fake.detach()).view(-1)
-            # Get the Wasserstian loss (different for critic and gen)
-            loss_D= netD(fake.detach()).mean() - netD(real).mean() + lambda_gp *
-            loss_G =
-            # Calculate D's loss on the all-fake batch
-            errD_fake = criterion(output, label)
-            # Calculate the gradients for this batch, accumulated (summed) with previous gradients
-            errD_fake.backward()
-            D_G_z1 = output.mean().item()
-            # Compute error of D as sum over the fake and the real batches
-            errD = errD_real + errD_fake
+            fake = netG(noise).detach() # Detach means no gradients into G
+            
+            # Get the Wasserstian loss (for critic)
+            epsilon = torch.rand(b_size, 1, 1, 1, device=device) # Get epsilon for each sample
+            # Sampled points somewhere between real and fake
+            x_hat = (epsilon*real_cpu + (1 - epsilon) * fake).requires_grad(True)
+            # Get gradient of D(x_hat)
+            grad = torch.autograd.grad(netD(x_hat).sum(), x_hat, create_graph=True)[0]
+            # The gradient penalty portion is (normalised grad - 1) ^ 2
+            gp = ((grad.flatten(1).norm(2, dim=1) - 1) ** 2).mean()
+
+            d_real = netD(real_cpu).mean
+            d_fake = netD(fake).mean()
+            loss_D = d_fake - d_real + lambda_gp * gp
+
             # Update D
-            optimizerD.step()
+            loss_D.backward() # Gradients for D
+            optimiserD.step()
 
             # The generator is only updated for every 5 iterations of the critic,
             # so the generator only gets (i_max / n_critic) iterations in an epoch
@@ -244,7 +238,7 @@ if __name__ == "__main__":
                 errG.backward()
                 D_G_z2 = output.mean().item()
                 # Update G
-                optimizerG.step()
+                optimiserG.step()
 
             # Output training stats
             if i % num_epochs == 0:
