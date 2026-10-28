@@ -98,7 +98,8 @@ class Generator(Module):
 
 # DISCRIMINATOR
 # Binary classification network that takes (1 x 128 x 64) input and outputs final prob
-# Essentially opposite of Generator but uses Conv2D and LeakyReLU with final Sigmoid
+# Essentially opposite of Generator but uses Conv2D and LeakyReLU
+# NO FINAL SIGMOID unlike DCGAN because we want raw score, not probability
 class Discriminator(Module):
     def __init__(self, ngpu):
         super(Discriminator, self).__init__()
@@ -109,19 +110,18 @@ class Discriminator(Module):
             nn.LeakyReLU(0.2, inplace=True),
             # state size. ``(ndf) x 64 x 32``
             nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 2),
+            nn.GroupNorm(ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. ``(ndf*2) x 32 x 16``
             nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 4),
+            nn.GroupNorm(ndf * 4),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. ``(ndf*4) x 16 x 8``
             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-            nn.BatchNorm2d(ndf * 8),
+            nn.GroupNorm(ndf * 8),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. ``(ndf*8) x 8 x 4``
             nn.Conv2d(ndf * 8, 1, (8, 4), 1, 0, bias=False),
-            # nn.Sigmoid()
         )
 
     def forward(self, input):
@@ -221,6 +221,8 @@ if __name__ == "__main__":
             # Update D
             loss_D.backward() # Gradients for D
             optimiserD.step()
+
+            W_estimate = (d_real - d_fake).item() # logging for plot later
 
             # The generator is only updated for every 5 iterations of the critic,
             # so the generator only gets (i_max / n_critic) iterations in an epoch
