@@ -18,7 +18,7 @@ import numpy as np
 # No fully connected or pooling layers are used
 
 # Generator starts with 100-dimensional latent vector, reshapes into 3D and does convlutions to 64x64
-# Discriminator starts at 64x64, does convolutions and then binary logistic regression
+# Discriminator starts at 128x64, does convolutions and then binary logistic regression
 
 # Discriminator is same as generator but opposite
 
@@ -40,13 +40,13 @@ ngf = 64 # Size of feature maps in generator
 ndf = 64 # Size of feature maps in discriminator
 num_epochs = 50 # Number of training epochs
 lr = 0.0001 # Learning rate for optimizers
-beta1 = 0 # Beta1 hyperparameter for Adam optimisers
+beta1 = 0.0 # Beta1 hyperparameter for Adam optimisers
 beta2 = 0.9 # Beta2 hyperparameter for Adaom optimisers
 ngpu = 1 # Number of GPUs available. Use 0 for CPU mode.
 n_critic = 5 # Number of times critic runs before generator
 lambda_gp = 10 # Multiplcative scalar for gradient penalty
 
-OUT_DIR = "outputs/dcgan"
+OUT_DIR = "outputs/wgan_gp"
 os.makedirs(os.path.join(OUT_DIR, "samples"), exist_ok=True)
 os.makedirs(os.path.join(OUT_DIR, "checkpoints"), exist_ok=True)
 SAVE_EVERY = 5  # epochs
@@ -97,7 +97,7 @@ class Generator(Module):
         return self.main(input)
 
 # DISCRIMINATOR
-# Binary classification network that takes (1 x 128 x 64) input and outputs final prob
+# Binary classification network that takes (1 x 128 x 64) input and outputs final score
 # Essentially opposite of Generator but uses Conv2D and LeakyReLU
 # NO FINAL SIGMOID unlike DCGAN because we want raw score, not probability
 # NO BATCH NORM as it creates correlations between samples in the same batch
@@ -111,15 +111,15 @@ class Discriminator(Module):
             nn.LeakyReLU(0.2, inplace=True),
             # state size. ``(ndf) x 64 x 32``
             nn.Conv2d(ndf, ndf * 2, 4, 2, 1, bias=False),
-            nn.GroupNorm(ndf * 2),
+            nn.GroupNorm(1, ndf * 2),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. ``(ndf*2) x 32 x 16``
             nn.Conv2d(ndf * 2, ndf * 4, 4, 2, 1, bias=False),
-            nn.GroupNorm(ndf * 4),
+            nn.GroupNorm(1, ndf * 4),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. ``(ndf*4) x 16 x 8``
             nn.Conv2d(ndf * 4, ndf * 8, 4, 2, 1, bias=False),
-            nn.GroupNorm(ndf * 8),
+            nn.GroupNorm(1, ndf * 8),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. ``(ndf*8) x 8 x 4``
             nn.Conv2d(ndf * 8, 1, (8, 4), 1, 0, bias=False),
@@ -178,6 +178,8 @@ if __name__ == "__main__":
     img_list = []
     G_losses = []
     D_losses = []
+    W_estimates = []
+    GP_values = []
     epoch_times = [] # Time taken for each epoch
     iters = 0
 
@@ -209,13 +211,13 @@ if __name__ == "__main__":
             # Get the Wasserstian loss (for critic)
             epsilon = torch.rand(b_size, 1, 1, 1, device=device) # Get epsilon for each sample
             # Sampled points somewhere between real and fake
-            x_hat = (epsilon*real_cpu + (1 - epsilon) * fake).requires_grad(True)
+            x_hat = (epsilon*real_cpu + (1 - epsilon) * fake).requires_grad_(True)
             # Get gradient of D(x_hat)
             grad = torch.autograd.grad(netD(x_hat).sum(), x_hat, create_graph=True)[0]
             # The gradient penalty portion is (normalised grad - 1) ^ 2
             gp = ((grad.flatten(1).norm(2, dim=1) - 1) ** 2).mean()
 
-            d_real = netD(real_cpu).mean
+            d_real = netD(real_cpu).mean()
             d_fake = netD(fake).mean()
             loss_D = d_fake - d_real + lambda_gp * gp
 
@@ -224,6 +226,9 @@ if __name__ == "__main__":
             optimiserD.step()
 
             W_estimate = (d_real - d_fake).item() # logging for plot later
+
+            W_estimates.append(W_estimate)
+            GP_values.append(gp.item())
 
             # The generator is only updated for every 5 iterations of the critic,
             # so the generator only gets (i_max / n_critic) iterations in an epoch
@@ -235,38 +240,51 @@ if __name__ == "__main__":
 
                 # Generate batch of latent vectors
                 noise = torch.randn(b_size, nz, 1, 1, device=device)
-                # Get the Wasserstian loss (for critic)
+                # Get the Wasserstian loss (for generator)
                 loss_G = -netD(netG(noise)).mean()
                 loss_G.backward()  # Calculate gradients for G
                 # Update G
                 optimiserG.step()
 
+                G_losses.append(loss_G.item()) # Save Losses for plotting later
+
             # Output training stats
-            if i % num_epochs == 0:
-                print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
-                    % (epoch, num_epochs, i, len(train_loader),
-                        errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
+            if i % 50 == 0:
+                print(f"[{epoch}/{num_epochs}][{i}/{len(train_loader)}]  "
+                        f"Loss_D: {loss_D.item():.4f}  W: {W_estimate:.4f}  GP: {gp.item():.4f}")
 
-            # Save Losses for plotting later
-            G_losses.append(loss_G.item())
-            D_losses.append(loss_D.item())
-
+            D_losses.append(loss_D.item()) # Save Losses for plotting later
             iters += 1
 
         if device.type == "cuda":
             torch.cuda.synchronize()
-            epoch_times.append(time.time() - t0)
-            print(f"Epoch {epoch + 1} took {epoch_times[-1]:.1f} s")
+        epoch_times.append(time.time() - t0)
+        print(f"Epoch {epoch + 1} took {epoch_times[-1]:.1f} s")
+
+         # Sample grid from the fixed noise (same z every time, so grids are comparable)
+        with torch.no_grad():
+            fake = netG(fixed_noise).cpu()
+        grid = vutils.make_grid(fake, nrow=8, padding=2, normalize=True, value_range=(-1, 1))
+        img_list.append(grid)  # for the animation
+        vutils.save_image(grid, os.path.join(OUT_DIR, "samples", f"epoch_{epoch + 1:03d}.png"))
+
+        # Checkpoint every SAVE_EVERY epochs and at the final epoch
+        if (epoch + 1) % SAVE_EVERY == 0 or epoch == num_epochs - 1:
+            torch.save({
+                "epoch": epoch + 1,
+                "netG": netG.state_dict(),
+                "netD": netD.state_dict(),
+                "optG": optimiserG.state_dict(),
+                "optD": optimiserD.state_dict(),
+                "G_losses": G_losses,
+                "D_losses": D_losses,
+                "GP_values": GP_values,
+                "W_estimates": W_estimates
+            }, os.path.join(OUT_DIR, "checkpoints", f"wgan_gp_epoch_{epoch + 1:03d}.pt"))
+            print(f"Saved checkpoint at epoch {epoch + 1}")
 
     # Peak VRAM required by the DCGAN
     peak_vram = torch.cuda.max_memory_allocated() / 2**20 if device.type == "cuda" else float("nan")
-
-    # Sample grid from the fixed noise (same z every time, so grids are comparable)
-    with torch.no_grad():
-        fake = netG(fixed_noise).cpu()
-    grid = vutils.make_grid(fake, nrow=8, padding=2, normalize=True, value_range=(-1, 1))
-    img_list.append(grid)  # for the animation
-    vutils.save_image(grid, os.path.join(OUT_DIR, "samples", f"epoch_{epoch + 1:03d}.png"))
 
     # Generation (inference) time for 64 images
     netG.eval()
@@ -285,7 +303,7 @@ if __name__ == "__main__":
                 f"G params: {n_params_G:,} | D params: {n_params_D:,}\n"
                 f"Peak VRAM: {peak_vram:.0f} MB\n"
                 f"Mean epoch time: {sum(epoch_times) / len(epoch_times):.1f} s "
-                f"(total {sum(epoch_times) / 60:.1f} min for {num_epochs} epochs)\n",
+                f"(total {sum(epoch_times) / 60:.1f} min for {num_epochs} epochs)\n"
                 f"Generate 64 images: {gen_ms:.1f} ms")
     print(summary)
 
@@ -301,13 +319,5 @@ if __name__ == "__main__":
     plt.xlabel("iterations")
     plt.ylabel("Loss")
     plt.legend()
-    plt.savefig("dcgan_losses.png", dpi=150)
+    plt.savefig("wgan_losses.png", dpi=150)
     plt.close()
-
-    # Visualisation of Generator Progression
-    fig = plt.figure(figsize=(8,8))
-    plt.axis("off")
-    ims = [[plt.imshow(np.transpose(i,(1,2,0)), animated=True)] for i in img_list]
-    ani = animation.ArtistAnimation(fig, ims, interval=1000, repeat_delay=1000, blit=True)
-
-    ani.save("dcgan_progress.gif", writer="pillow", fps=2)
