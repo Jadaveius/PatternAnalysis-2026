@@ -1,19 +1,48 @@
 # Synthetic Prostate MRI Generation with WGAN-GP (HipMRI 2D)
 
 One-paragraph summary: what was built, the problem it solves, headline result
-(e.g. "WGAN-GP reached SSIM X vs DCGAN Y with no evidence of memorisation").
+(e.g. "WGAN-GP reached SSIM X vs DCGAN Y with no evidence of memorisation"). - ADDED LAST
+BASED ON RESULTS OF REPORT (like exec summary)
 
 ![Uncurated WGAN-GP samples](images/wgan_gp_final.png)
 
 ## Contents
 (optional table of contents linking to the sections below)
 
-## 1. Problem & Motivation
-### 1.1 The Engineering Dilemma
-Fidelity vs memorisation vs mode collapse: why synthetic medical images must be
-realistic AND novel.
-### 1.2 Feasibility Review
-Your one-page review from the check-off, clearly labelled.
+## 1. Feasibility Review
+Topic 2.4 - Image Generation: Synthetic Medical Cohorts and Privacy
+### 1.1 User Need, Scope and Acceptance Criteria
+The purpose of this research is to provide additional medical imaging resources to medical researchers investigating 2D pelvic MRI slices. Through WGAN generation, new slices could be synthesised which replicate realistic tissue structures and remove the risk of violating patient privacy laws such as HIPPA and GDPR. Final intentions for this project are to determine whether the model can produce synthetic images that are safe, structurally sound and could plausibly be used for training. To address the fidelity vs memorisation vs privacy dilemma, testable acceptance criteria of the final model include:
+- Structural Similarity Index of greater than 0.6 (SSIM > 0.6) across synthesised cohorts against reference anatomical slices.
+- WGAN results are better than those of the baseline model.
+- Nearest-neighbour distance audit and latent space interpolation, sample distribution should not be closer than test distribution.
+- Peak VRAM < 4 GB and < 6 hours GPU training.
+### 1.2 Model Choice and Course Concepts
+The chosen model is the WGAN-GP which is Normal difficulty, on HipMRI 2D slices which are already split into test, train and validation sets. The baseline model is a DCGAN which is identical apart from the loss and Lipschitz constraint.
+- Must implement Earth-Mover distance. This is part of what makes it a WGAN, providing a continuous distance (differentiable almost everywhere) that allows the critic to be trained towards optimality. We can then train with low likelihood of mode collapse and image generation improving for higher number of iterations.
+- Critic must have Lipschitz constraint. Based on the paper this is the other requirement that allows the critic to have a continuous loss function to be optimised.
+- To be a WGAN-GP rather than just a WGAN, the loss function for the critic must include a gradient penalty scaled by some lambda (this penalty directly incorporates the Lipschitz constraint).
+- Starting parameters for the system are based on those noted in the WGAN-GP paper, α=0.0001,λ=10,m=64,n_CRITIC=5 where these are learning rate, gradient penalty lambda, batch size and number of critic iterations per generator iteration, respectively.
+- Builds directly on course concepts involving DCGANs and WGANs (both covered in Week 9 lecture content) as well as loss/activation functions, hyperparameters and model evaluation methods.
+### 1.3 Preliminary Feasibility Evidence
+An initial data audit was completed using `data_audit.py`, which can be summarised into this table:
+| **Measure** | **Train** | **Validate** | **Test** |
+| --- | :---: | :---: | :---: |
+| Slices | 11,460 | 660 | 540 |
+| Patients | 31 | 4 | 3 |
+| Slice Shapes | 256x128 (11,400), 256x144 (60) | 256x128 | 256x128 |
+| Intensity Range (Sampled) | 0 – 1,150 | 0 – 565  | 0 – 617 |
+| Median Per-Slice | 387.5 | 373 | 424 |
+| Near-Empty Slices | 0% | 0% | 0% |
+An analysis of this preliminary data audit can be found in Section 3: Data.
+### 1.4 Risk, Budget and Fallback
+The key technical risks associated with the project are:
+- WGAN has a risk of unstable training results if a momentum-based optimiser (Adam) or high learning rates are used, placing some restrictions on model architecture and tuning parameters.
+- Rangpur script delays due to high student traffic approaching the due date.
+- Chosen parameters exceed GPU memory or provided training time, which may not become apparent until training failure occurs.
+- Test set only has 3 patients which limits strong statements surrounding how well generalised the data is.
+The next planned experiment is memory/time estimations followed by baseline model (DCGAN) implementation. In the case where proposed risks begin to impact the deliverables of the project, the DCGAN baseline can instead become the main project with a basic autoencoder becoming the new baseline. This is a different normal difficulty option under the same topic.
+
 
 ## 2. How It Works
 ### 2.1 DCGAN (Baseline)
