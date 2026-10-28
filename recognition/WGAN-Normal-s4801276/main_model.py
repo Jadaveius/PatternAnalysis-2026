@@ -10,9 +10,6 @@ import torchvision.utils as vutils
 import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
-import matplotlib.animation as animation
-from IPython.display import HTML
-import numpy as np
 
 # NOTES - For myself to be removed/moved to README
 # No fully connected or pooling layers are used
@@ -320,4 +317,19 @@ if __name__ == "__main__":
     plt.ylabel("Loss")
     plt.legend()
     plt.savefig("wgan_losses.png", dpi=150)
+    plt.close()
+
+    # Loss versus training, W estimate
+    d_iters = range(len(D_losses))
+    g_iters = [(k + 1) * n_critic - 1 for k in range(len(G_losses))]  # critic step at which each G update happened
+
+    fig, axes = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
+    axes[0].plot(d_iters, D_losses, label="Critic loss", alpha=0.6)
+    axes[0].plot(g_iters, G_losses, label="Generator loss", alpha=0.6)
+    axes[0].legend(); axes[0].set_ylabel("Loss")
+    axes[1].plot(d_iters, W_estimates); axes[1].set_ylabel("W estimate")
+    axes[2].plot(d_iters, GP_values); axes[2].set_ylabel("Gradient penalty")
+    axes[2].set_xlabel("Critic iterations")
+    plt.tight_layout()
+    plt.savefig(os.path.join(OUT_DIR, "wgan_gp_curves.png"), dpi=150)
     plt.close()
