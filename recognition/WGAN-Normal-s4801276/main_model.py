@@ -35,7 +35,7 @@ nc = 1 # Number of channels in the training images. Greyscale image is 1
 nz = 100 # Size of z latent vector (i.e. size of generator input)
 ngf = 64 # Size of feature maps in generator
 ndf = 64 # Size of feature maps in discriminator
-num_epochs = 50 # Number of training epochs
+num_epochs = 250 # Number of training epochs
 lr = 0.0001 # Learning rate for optimizers
 beta1 = 0.0 # Beta1 hyperparameter for Adam optimisers
 beta2 = 0.9 # Beta2 hyperparameter for Adaom optimisers
@@ -46,7 +46,7 @@ lambda_gp = 10 # Multiplcative scalar for gradient penalty
 OUT_DIR = "outputs/wgan_gp"
 os.makedirs(os.path.join(OUT_DIR, "samples"), exist_ok=True)
 os.makedirs(os.path.join(OUT_DIR, "checkpoints"), exist_ok=True)
-SAVE_EVERY = 5  # epochs
+SAVE_EVERY = 10  # epochs
 
 # DCGAN paper says model weights are randomly initialised from normal distribution
 # with mean = 0 and stdev = 0.02
