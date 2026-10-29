@@ -179,8 +179,8 @@ The provided dataset is already split into separate training, validation and tes
 ### 4.3 Splits
 **Train (91%) / Validate (5%) / Test (4%) Split**
 - **Train:** For fitting the generator and critic (learning the weights).
-- **Validate:** KID verification is done against validation slices, with the intent of helping to tune the WGAN-GP.
-- **Test:** Used with the final model, checking SSIM, KID/FID and memorisation audit acceptance criteria are met.
+- **Validate:** FID and SSIM verification is done against saved checkpoints for each model to find the best performing checkpoint (which will be used for final evaluation).
+- **Test:** Used with the final model, checking SSIM, FID and memorisation audit (nearest neighbours) acceptance criteria are met.
 
 ## 5. Experiments
 ### 5.1 Training Setup
