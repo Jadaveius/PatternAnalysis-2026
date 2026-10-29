@@ -59,8 +59,41 @@ WGAN-GP maintains most of the same architecture as the DCGAN in its generator an
 Other major changes between the DCGAN and the WGAN-GP surround the loss function. While DCGAN uses BCELoss, WGAN-GP *must* use Wasserstian loss (which has separate equations for the loss of the critic vs loss of the generator). In addition, the critic loss also includes the gradient penalty component (the GP portion of WGAN-GP). Lipschitz constraint is obeyed through the usage of the gradient penalty, making this model a WGAN.
 
 ### 2.3 Architecture
-Figure or table of generator/critic layers and tensor shapes (1×128×64);
-what changed from DCGAN and why.
+**Generator** (identical in DCGAN/WGAN-GP)
+
+<div align="center">
+
+| Layer | Operation | Output shape | Parameters |
+|---|---|---|---|
+| Input | Latent vector z ~ N(0, I) | 100 × 1 × 1 | – |
+| 1 | ConvTranspose (8×4, stride 1) → BatchNorm → ReLU | 512 × 8 × 4 | 1,639,424 |
+| 2 | ConvTranspose (4×4, stride 2) → BatchNorm → ReLU | 256 × 16 × 8 | 2,097,664 |
+| 3 | ConvTranspose (4×4, stride 2) → BatchNorm → ReLU | 128 × 32 × 16 | 524,544 |
+| 4 | ConvTranspose (4×4, stride 2) → BatchNorm → ReLU | 64 × 64 × 32 | 131,200 |
+| 5 | ConvTranspose (4×4, stride 2) → Tanh | **1 × 128 × 64** | 1,024 |
+| | | **Total** | **4,393,856** |
+
+</div>
+
+**Critic** (different in DCGAN/WGAN-GP)
+
+<div align="center">
+
+| Layer | Operation | Output shape | Parameters |
+|---|---|---|---|
+| Input | Real or generated slice | 1 × 128 × 64 | – |
+| 1 | Conv (4×4, stride 2) → LeakyReLU(0.2) | 64 × 64 × 32 | 1,024 |
+| 2 | Conv (4×4, stride 2) → Norm* → LeakyReLU(0.2) | 128 × 32 × 16 | 131,328 |
+| 3 | Conv (4×4, stride 2) → Norm* → LeakyReLU(0.2) | 256 × 16 × 8 | 524,800 |
+| 4 | Conv (4×4, stride 2) → Norm* → LeakyReLU(0.2) | 512 × 8 × 4 | 2,098,176 |
+| 5 | Conv (8×4, stride 1) | **1 × 1 × 1** | 16,384 |
+| | | **Total** | **2,771,712** |
+
+</div>
+
+\* **Norm** is `BatchNorm2d` in the DCGAN discriminator and `GroupNorm(1, C)` (layer
+normalisation) in the WGAN-GP critic. The DCGAN discriminator additionally ends with a
+Sigmoid to output a probability; the WGAN-GP critic outputs an unbounded score.
 
 ## 3. Usage
 ### 3.1 Dependencies
