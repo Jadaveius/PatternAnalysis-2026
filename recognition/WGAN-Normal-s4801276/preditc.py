@@ -1,5 +1,9 @@
 import torch
+from hipmri_class import HipMRIDataset
+from main_model import Generator, nz
 from torchmetrics.functional.image import structural_similarity_index_measure as ssim
+
+VALIDATING = 1
 
 # For each generated image find the highest SSIM against a reference slice
 # (can be validate or test)
@@ -18,3 +22,22 @@ def best_ssim_match(gen, ref, chunk=256):
             best[n] = torch.maximum(best[n], score)
 
     return best
+
+if __name__ == "__main__":
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    val_set = HipMRIDataset(seg="validate")
+    test_set = HipMRIDataset(seg="test")
+
+    if (VALIDATING):
+        ref = torch.stack([val_set[i] for i in range(len(val_set))]).to(device)
+
+        with torch.no_grad():
+            gen = netG(torch.randn(1000, nz, 1, 1, device=device))
+
+        scores = best_ssim_match(gen, ref)
+        print(f"Mean best-match SSIM: {scores.mean():.4f} (target > 0.6)")
+
+    # Should only be run once checkpoints have been picked
+    else:
+        ref = torch.stack([test_set[i] for i in range(len(test_set))]).to(device)
