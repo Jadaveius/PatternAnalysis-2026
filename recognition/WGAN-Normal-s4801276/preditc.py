@@ -10,11 +10,11 @@ from torchmetrics.functional.image import structural_similarity_index_measure as
 from torchmetrics.image.fid import FrechetInceptionDistance
 import torchvision.utils as vutils
 
-VALIDATING = True
+VALIDATING = False
 NUM_SAMPLES = 256
 
 BASE = Path(__file__).resolve().parent
-GEN_PATH = BASE / "outputs" / "wgan_gp" / "checkpoints"
+GEN_PATH = BASE / "outputs" / "wgan_gp_ema_lrd" / "checkpoints"
 
 folder_path = GEN_PATH
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -155,9 +155,9 @@ if __name__ == "__main__":
     # Should only be run once checkpoints have been picked
     else:
         FINAL_MODELS = {
-        "DCGAN": (BASE / "outputs/dcgan/checkpoints/dcgan_epoch_050.pt", "netG")
-        #"WGAN-GP standard": (BASE / "outputs/wgan_gp_standard/checkpoints/wgan_gp_epoch_XXX.pt", "netG"),
-        #"WGAN-GP tuned": (BASE / "outputs/wgan_gp/checkpoints/wgan_gp_epoch_XXX.pt", "<EMA key>"),
+        "DCGAN": (BASE / "outputs/dcgan/checkpoints/dcgan_epoch_050.pt", "netG"),
+        "WGAN-GP standard": (BASE / "outputs/wgan_gp/checkpoints/wgan_gp_epoch_240.pt", "netG"),
+        "WGAN-GP tuned": (BASE / "outputs/wgan_gp_ema_lrd/checkpoints/wgan_gp_epoch_250.pt", "emaG"),
         }
 
         train = torch.stack([train_set[i] for i in range(len(train_set))]).to(device)
@@ -186,9 +186,10 @@ if __name__ == "__main__":
             torch.manual_seed(0) # Same noise as validity testing       
             netG = load_generator(path, key)
             with torch.no_grad():
-                gen = netG(torch.randn(NUM_SAMPLES, nz, 1, 1, device=device))
+                # Want to generate for size of test set
+                gen = netG(torch.randn(ref.size(0), nz, 1, 1, device=device))
 
-            get_sample_grids(name, gen)
+            get_sample_grids(name, netG)
             fid_score = compute_fid(fid, gen)
 
             print(f"{name}: FID {fid_score:.2f}")
@@ -210,6 +211,29 @@ if __name__ == "__main__":
             pick = torch.arange(0, ref.size(0), ref.size(0) // 8)[:8]
             vutils.save_image(torch.cat([ref[pick], recon[pick]]),
                               BASE / "outputs" / f"inversion_{name}.png",
+                              nrow=8, padding=2, normalize=True, value_range=(-1, 1))
+
+            # Nearest-neighbour memorisation audit
+            gen_d, gen_idx = nearest_train(gen, train_flat)
+            frac_close = (gen_d < mem_threshold).float().mean().item()
+            test_results[name].update({"nn_gen_median": gen_d.median().item(),
+                                       "nn_test_median": test_d.median().item(),
+                                       "nn_frac_below_test_p1": frac_close})
+            
+            print(f"{name}: NN RMSE median gen {gen_d.median():.3f} vs test {test_d.median():.3f} | "
+                  f"{frac_close:.1%} closer than 99% of real test slices")
+
+            plt.figure(figsize=(7, 4))
+            plt.hist(test_d.cpu(), bins=40, alpha=0.6, density=True, label="Real test → train")
+            plt.hist(gen_d.cpu(), bins=40, alpha=0.6, density=True, label=f"{name} → train")
+            plt.axvline(mem_threshold.item(), color="k", ls="--", label="Test 1st percentile")
+            plt.xlabel("RMSE to nearest training slice"); plt.ylabel("Density"); plt.legend()
+            plt.tight_layout()
+            plt.savefig(BASE / "outputs" / f"nn_hist_{name}.png", dpi=150); plt.close()
+
+            order = gen_d.argsort()[:8]
+            vutils.save_image(torch.cat([gen[order], train[gen_idx[order]]]),
+                              BASE / "outputs" / f"nn_pairs_{name}.png",
                               nrow=8, padding=2, normalize=True, value_range=(-1, 1))
 
 
