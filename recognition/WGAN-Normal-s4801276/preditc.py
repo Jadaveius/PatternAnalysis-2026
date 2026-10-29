@@ -10,7 +10,7 @@ from torchmetrics.functional.image import structural_similarity_index_measure as
 from torchmetrics.image.fid import FrechetInceptionDistance
 import torchvision.utils as vutils
 
-VALIDATING = 1
+VALIDATING = True
 NUM_SAMPLES = 256
 
 BASE = Path(__file__).resolve().parent
@@ -90,7 +90,7 @@ if __name__ == "__main__":
     val_set = HipMRIDataset(seg="validate")
     test_set = HipMRIDataset(seg="test")
 
-    if (VALIDATING):
+    if VALIDATING:
         ref = torch.stack([val_set[i] for i in range(len(val_set))]).to(device)
 
         fid = FrechetInceptionDistance(feature=2048, normalize=True,
