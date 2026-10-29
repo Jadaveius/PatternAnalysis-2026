@@ -124,6 +124,12 @@ if __name__ == "__main__":
         for s in range(0, ref.size(0), 100):
             fid.update(to_rgb_01(ref[s:s + 100]), real=True)
 
+        # Get a set of real images (may only need to run once)
+        torch.manual_seed(0)
+        idx = torch.randperm(ref.size(0))[:32]
+        vutils.save_image(ref[idx], BASE / "outputs" / "grid_real_test.png",
+                          nrow=8, padding=2, normalize=True, value_range=(-1, 1))
+
         test_results = {}
         # For each different model, evaluate it
         for name, (path, key) in FINAL_MODELS.items():
