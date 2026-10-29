@@ -187,7 +187,42 @@ The provided dataset is already split into separate training, validation and tes
 Hyperparameter table for all three models; hardware; epochs and number of
 generator updates.
 ### 5.2 Training Dynamics
-DCGAN loss curves (instability spikes) vs WGAN-GP W-estimate and GP curves.
+All three models received 4,500 generator updates. Note that the x-axes differ: the DCGAN
+plot is in generator iterations (one discriminator update per generator update), while the
+WGAN-GP plots are in critic iterations (five critic updates per generator update, so 22,500
+critic iterations = 4,500 generator updates).
+
+**DCGAN (baseline)**
+
+![DCGAN losses](dcgan_results/dcgan_losses.png)
+
+After a very unstable first 100 or so iterations, the generator loss settles around roughly 4, while the
+discriminator loss falls to around 0.2; this indicates the discriminator increasingly
+dominates. Instability spikes appear to occur every 150–350 iterations, which are cases of 
+where the discriminator is briefly fooled and both losses jump before recovering.
+Both losses are flat after around 1,500 iterations, so there is no further indication of whether sample quality
+is still improving.
+
+**WGAN-GP (standard)**
+
+![WGAN-GP standard training curves](wgan_results/wgan_gp_curves.png)
+
+The gradient penalty falls from 30 to approximately 0.5 within the first few hundred critic iterations
+and stays there for the rest of training, showing the Lipschitz constraint is being enforced.
+The Wasserstein estimate rises sharply to around 50 as the critic first learns to separate real from
+generated slices, drops to roughly 10 as the generator catches up, and then rises to a plateau of 15–18
+from ~4,000 critic iterations onward. No instability spikes comparable to DCGAN occur. However,
+the W estimate does not decrease steadily over training as reported by Gulrajani et al., suggesting
+there are no further improvements in sample quality.
+
+**WGAN-GP (tuned: EMA + LR decay)**
+
+![WGAN-GP tuned training curves](wgan_ema_lr_results/wgan_gp_curves.png)
+
+Training follows the standard run closely until learning-rate decay begins at epoch 125. From then on,
+the W-estimate band and generator loss narrow noticeably compared with the standard run, consistent with smaller 
+updates reducing training variance as the learning rate approaches zero. The gradient penalty is unaffected.
+
 ### 5.3 Generated Samples
 Uncurated grids per model; progression figure (epochs 1 / 10 / 25 / final).
 ### 5.4 Tuned WGAN-GP
