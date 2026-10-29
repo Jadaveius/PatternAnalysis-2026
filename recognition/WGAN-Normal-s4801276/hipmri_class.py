@@ -4,8 +4,6 @@ import torch
 from torch.utils.data import Dataset
 import nibabel as nib
 import numpy as np
-import matplotlib.pyplot as plt
-
 
 # Root directory for dataset
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "HipMRI") 
