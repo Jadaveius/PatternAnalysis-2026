@@ -1,0 +1,32 @@
+{
+  "DCGAN": {
+    "checkpoint": "dcgan_epoch_050.pt",
+    "fid": 177.47080993652344,
+    "inv_ssim_mean": 0.3745213449001312,
+    "inv_ssim_std": 0.07177557051181793,
+    "inv_frac_above_0.6": 0.0,
+    "nn_gen_median": 0.466788113117218,
+    "nn_test_median": 0.3557233512401581,
+    "nn_frac_below_test_p1": 0.0018518518190830946
+  },
+  "WGAN-GP standard": {
+    "checkpoint": "wgan_gp_epoch_240.pt",
+    "fid": 271.4211120605469,
+    "inv_ssim_mean": 0.36401793360710144,
+    "inv_ssim_std": 0.07777814567089081,
+    "inv_frac_above_0.6": 0.0,
+    "nn_gen_median": 0.4446756839752197,
+    "nn_test_median": 0.3557233512401581,
+    "nn_frac_below_test_p1": 0.003703703638166189
+  },
+  "WGAN-GP tuned": {
+    "checkpoint": "wgan_gp_epoch_250.pt",
+    "fid": 316.7481384277344,
+    "inv_ssim_mean": 0.36784541606903076,
+    "inv_ssim_std": 0.07752173393964767,
+    "inv_frac_above_0.6": 0.0,
+    "nn_gen_median": 0.436423659324646,
+    "nn_test_median": 0.3557233512401581,
+    "nn_frac_below_test_p1": 0.0
+  }
+}

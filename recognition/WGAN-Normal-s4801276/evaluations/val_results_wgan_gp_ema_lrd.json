@@ -1,0 +1,30 @@
+{
+  "ssim": {},
+  "fid": {
+    "wgan_gp_epoch_010.pt": 605.895751953125,
+    "wgan_gp_epoch_020.pt": 596.3140258789062,
+    "wgan_gp_epoch_030.pt": 565.3937377929688,
+    "wgan_gp_epoch_040.pt": 538.002197265625,
+    "wgan_gp_epoch_050.pt": 523.5173950195312,
+    "wgan_gp_epoch_060.pt": 510.1680908203125,
+    "wgan_gp_epoch_070.pt": 506.9888000488281,
+    "wgan_gp_epoch_080.pt": 474.4308166503906,
+    "wgan_gp_epoch_090.pt": 444.89556884765625,
+    "wgan_gp_epoch_100.pt": 413.755615234375,
+    "wgan_gp_epoch_110.pt": 383.6033020019531,
+    "wgan_gp_epoch_120.pt": 366.9587707519531,
+    "wgan_gp_epoch_130.pt": 353.9256591796875,
+    "wgan_gp_epoch_140.pt": 349.3040466308594,
+    "wgan_gp_epoch_150.pt": 340.405517578125,
+    "wgan_gp_epoch_160.pt": 340.2525634765625,
+    "wgan_gp_epoch_170.pt": 340.1313171386719,
+    "wgan_gp_epoch_180.pt": 335.1522216796875,
+    "wgan_gp_epoch_190.pt": 335.1748352050781,
+    "wgan_gp_epoch_200.pt": 331.00628662109375,
+    "wgan_gp_epoch_210.pt": 329.8015441894531,
+    "wgan_gp_epoch_220.pt": 329.8932800292969,
+    "wgan_gp_epoch_230.pt": 326.92822265625,
+    "wgan_gp_epoch_240.pt": 327.0337829589844,
+    "wgan_gp_epoch_250.pt": 326.651611328125
+  }
+}
