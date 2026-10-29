@@ -49,6 +49,39 @@ def best_ssim_match(gen, ref, chunk=256):
 
     return best
 
+# GAN inversion: for each reference slice, optimise a latent z so that G(z) ≈ slice,
+# then compute the paired SSIM between the slice and its reconstruction G(z)
+# Returns (reconstructions, per-slice SSIM)
+def invert_ssim(netG, ref, steps=500, lr=0.05, z_reg=1e-3, batch=64, seed=0):
+   
+    netG.eval()
+    for p in netG.parameters():
+        p.requires_grad_(False) # only z is optimised, not the generator
+
+    torch.manual_seed(seed)
+
+    recons, scores = [], []
+    for s in range(0, ref.size(0), batch):
+        x = ref[s:s + batch]
+        z = torch.randn(x.size(0), nz, 1, 1, device=x.device, requires_grad=True)
+        opt = torch.optim.Adam([z], lr=lr)
+
+        for _ in range(steps):
+            opt.zero_grad()
+            loss = torch.nn.functional.mse_loss(netG(z), x) + z_reg * z.pow(2).mean()
+            loss.backward()
+            opt.step()
+
+        with torch.no_grad():
+            r = netG(z)
+            recons.append(r)
+            scores.append(ssim(r, x, data_range=2.0, reduction=None))
+
+    for p in netG.parameters():
+        p.requires_grad_(True)
+
+    return torch.cat(recons), torch.cat(scores)
+
 def get_sample_grids(name, generator):
     for seed in [1, 2, 3]:
         torch.manual_seed(seed)
@@ -109,17 +142,11 @@ if __name__ == "__main__":
             with torch.no_grad():
                 gen = netG(torch.randn(NUM_SAMPLES, nz, 1, 1, device=device))
 
-            scores = best_ssim_match(gen, ref)
 
-            ssim_results[file_path.name] = scores.mean().item()
             fid_results[file_path.name] = compute_fid(fid, gen)
-
-            print(f"{file_path.name}: mean best-match SSIM {ssim_results[file_path.name]:.4f}")
             print(f"{file_path.name}: FID {fid_results[file_path.name]:.4f}")
 
-        best_model_ssim = max(ssim_results, key=ssim_results.get) # best SSIM is large
         best_model_fid = min(fid_results, key=fid_results.get) # best FID is small
-        print(f"\nBest checkpoint: {best_model_ssim} (val SSIM {ssim_results[best_model_ssim]:.4f})")
         print(f"\nBest checkpoint: {best_model_fid} (val FID {fid_results[best_model_fid]:.4f})")
 
         with open(BASE / "outputs" / f"val_results_{GEN_PATH.parent.name}.json", "w") as f:
@@ -128,9 +155,9 @@ if __name__ == "__main__":
     # Should only be run once checkpoints have been picked
     else:
         FINAL_MODELS = {
-        "DCGAN": (BASE / "outputs/dcgan/checkpoints/dcgan_epoch_050.pt", "netG"),
-        "WGAN-GP standard": (BASE / "outputs/wgan_gp_standard/checkpoints/wgan_gp_epoch_XXX.pt", "netG"),
-        "WGAN-GP tuned": (BASE / "outputs/wgan_gp/checkpoints/wgan_gp_epoch_XXX.pt", "<EMA key>"),
+        "DCGAN": (BASE / "outputs/dcgan/checkpoints/dcgan_epoch_050.pt", "netG")
+        #"WGAN-GP standard": (BASE / "outputs/wgan_gp_standard/checkpoints/wgan_gp_epoch_XXX.pt", "netG"),
+        #"WGAN-GP tuned": (BASE / "outputs/wgan_gp/checkpoints/wgan_gp_epoch_XXX.pt", "<EMA key>"),
         }
 
         train = torch.stack([train_set[i] for i in range(len(train_set))]).to(device)
@@ -162,15 +189,29 @@ if __name__ == "__main__":
                 gen = netG(torch.randn(NUM_SAMPLES, nz, 1, 1, device=device))
 
             get_sample_grids(name, gen)
-            scores = best_ssim_match(gen, ref)
             fid_score = compute_fid(fid, gen)
+
+            print(f"{name}: FID {fid_score:.2f}")
 
             # Save results in dict for log/ease of find later
             test_results[name] = {"checkpoint": path.name,
-                                  "ssim_mean": scores.mean().item(),
-                                  "ssim_std": scores.std().item(),
                                   "fid": fid_score}
-            print(f"{name}: SSIM {scores.mean():.4f} ± {scores.std():.4f} | FID {fid_score:.2f}")
+
+            # GAN-inversion SSIM: paired reconstruction of each unseen test slice (target > 0.6)
+            recon, inv_scores = invert_ssim(netG, ref)
+            test_results[name].update({"inv_ssim_mean": inv_scores.mean().item(),
+                                       "inv_ssim_std": inv_scores.std().item(),
+                                       "inv_frac_above_0.6": (inv_scores > 0.6).float().mean().item()})
+            
+            print(f"{name}: inversion SSIM {inv_scores.mean():.4f} ± {inv_scores.std():.4f} "
+                  f"({(inv_scores > 0.6).float().mean():.1%} of slices > 0.6)")
+
+            # Figure: test slices (top) vs their reconstructions (bottom)
+            pick = torch.arange(0, ref.size(0), ref.size(0) // 8)[:8]
+            vutils.save_image(torch.cat([ref[pick], recon[pick]]),
+                              BASE / "outputs" / f"inversion_{name}.png",
+                              nrow=8, padding=2, normalize=True, value_range=(-1, 1))
+
 
         # Save results from model evaluation
         with open(BASE / "outputs" / "test_results.json", "w") as f:
