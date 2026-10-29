@@ -99,10 +99,34 @@ Sigmoid to output a probability; the WGAN-GP critic outputs an unbounded score.
 ### 3.1 Dependencies
 All code in this project was run using Python 3.13. Exact dependencies for the different files are provided below:
 `data_audit.py`
+- os
+- re
+- nibabel
+- numpy
+- Counter from collections
+
 `modules.py`
+- torch (including nn, optim and utils)
+- torchvision.utils
+
 `dataset.py`
+- os
+- glob
+- Dataset from torch.utils
+- nibabel
+- numpy
+
 `train.py`
+- Insert here (must restructure files)
+
 `predict.py`
+- json
+- torch
+- matplotlib
+- Path from pathlib
+- torchvision.utils
+- torchmetrics (functional and image)
+
 
 Exact versions (Python, torch, torchvision, nibabel, numpy, matplotlib…).
 ### 3.2 Reproducing Results
