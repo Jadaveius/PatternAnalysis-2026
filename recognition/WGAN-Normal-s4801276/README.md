@@ -39,7 +39,7 @@ An initial data audit was completed using `data_audit.py`, which can be summaris
 
 </div>
 
-An analysis of this preliminary data audit can be found in **Section 3: Data**.
+An analysis of this preliminary data audit can be found in **Section 4: Data**.
 ### 1.4 Risk, Budget and Fallback
 The key technical risks associated with the project are:
 - WGAN has a risk of unstable training results if a momentum-based optimiser (Adam) or high learning rates are used, placing some restrictions on model architecture and tuning parameters.
@@ -50,8 +50,9 @@ The next planned experiment is memory/time estimations followed by baseline mode
 
 
 ## 2. How It Works
+Exact information about hyperparameters/how to run can be found in **Section 3: Usage**. This section instead summarises the general architecture of the system and the differences between the baseline and real model.
 ### 2.1 DCGAN (Baseline)
-Architecture, BCE loss, why it's the baseline.
+For the baseline implementation a DCGAN was created using only the standard hyperparameters from the DCGAN paper. The generator goes through 4 layers of convolution, starting from latent space vector *z* and outputting a 128x64 image, matching the training images (see **Section 4.2** about pre-process downsampling).
 ### 2.2 WGAN-GP
 Wasserstein distance, Lipschitz critic, gradient penalty (with the formula),
 n_critic, why BatchNorm is removed from the critic.
@@ -59,63 +60,73 @@ n_critic, why BatchNorm is removed from the critic.
 Figure or table of generator/critic layers and tensor shapes (1×128×64);
 what changed from DCGAN and why.
 
-## 3. Data
-### 3.1 Dataset & Data Audit
+## 3. Usage
+### 3.1 Dependencies
+All code in this project was run using Python 3.13. Exact dependencies for the different files are provided below:
+`data_audit.py`
+`modules.py`
+`dataset.py`
+`train.py`
+`predict.py`
+
+Exact versions (Python, torch, torchvision, nibabel, numpy, matplotlib…).
+### 3.2 Reproducing Results
+**DCGAN**
+**WGAN-GP**
+**WGAN-GP Tuned**
+Commands for training (each model), evaluation and prediction; seeds; data path.
+### 3.3 Example Inputs & Outputs
+What predict.py takes and produces.
+
+## 4. Data
+### 4.1 Dataset & Data Audit
 The provided dataset is already split into separate training, validation and testing sets. In this case, an audit was done on the provided sets to ensure they were appropriately split with usable data (i.e. no patient leakage between sets and no near-empty/dark images) as seen in **Section 1.3**. The audit found no patient leakage between sets as well as 0 near-empty slices in the provided files, suggesting the test/train/split was valid. In addition to validating the dataset's usability for the task, the audit results were used to help determine what kind of pre-processing should be completed on the dataset.
-### 3.2 Pre-processing
+### 4.2 Pre-processing
 - **Centre Crop:** In order to avoid dropping any data from the training set, a centre crop was performed to resize the 60 outlying 256x144 images that were found during the data audit.
 - **Scaling to [-1, 1]:** Due to the end of the generator architecture using a tanh activation function, intensity values must be min-max scaled to a range of [-1, 1] to be able to pass through it.
 - **99.5th-Percentile Clipping:** The data audit revealed the training data featured intensity values up to 1,150, however, the median highest-intensity value seen in training images was only 387.5. Since the data is min-max scaled from [-1, 1], any training scans that feature outlier high-intensity values will define the top of the scaling range for that slice. This would mean that the other lower-intensity pixels would be scaled down and squashed into a narrower, darker band of intensity values. To prevent this, intensity values for images are clipped to the 99.5th percentile.
 - **Downsampling to 128x64:** The network architecture in the DCGAN/WGAN papers was designed around a 64x64, so using the full resolution image would require an additional layer in both the generator and critic networks. Additionaly, downsampling reduces the total pixel count of the images, lowering expected memory usage and training time. While the 2:1 aspect ratio is preserved, it is expected that this pre-processing decision will prevent the generator from learning some of the finer details of the data.
 
-### 3.3 Splits
+### 4.3 Splits
 **Train (91%) / Validate (5%) / Test (4%) Split**
 - **Train:** For fitting the generator and critic (learning the weights).
 - **Validate:** KID verification is done against validation slices, with the intent of helping to tune the WGAN-GP.
 - **Test:** Used with the final model, checking SSIM, KID/FID and memorisation audit acceptance criteria are met.
 
-## 4. Experiments
-### 4.1 Training Setup
+## 5. Experiments
+### 5.1 Training Setup
 Hyperparameter table for all three models; hardware; epochs and number of
 generator updates.
-### 4.2 Training Dynamics
+### 5.2 Training Dynamics
 DCGAN loss curves (instability spikes) vs WGAN-GP W-estimate and GP curves.
-### 4.3 Generated Samples
+### 5.3 Generated Samples
 Uncurated grids per model; progression figure (epochs 1 / 10 / 25 / final).
-### 4.4 Tuned WGAN-GP
+### 5.4 Tuned WGAN-GP
 What was changed, why, and what effect it had (on validation data).
 
-## 5. Results
-### 5.1 Quantitative Benchmark
+## 6. Results
+### 6.1 Quantitative Benchmark
 Table: DCGAN | WGAN-GP (paper defaults) | WGAN-GP (tuned): SSIM vs test,
 FID/KID, diversity metric; pass/fail against SSIM > 0.6.
-### 5.2 Memorisation Audit
+### 6.2 Memorisation Audit
 Nearest-neighbour distances (generated→train vs test→train), example
 nearest-neighbour pairs.
-### 5.3 Latent Space Interpolation
+### 6.3 Latent Space Interpolation
 Interpolation strip between two latent vectors; smoothness and anatomical
 plausibility.
-### 5.4 Resource Profiling
+### 6.4 Resource Profiling
 Table: parameters, peak VRAM, time per epoch, time per generator update,
 generation latency, GPU.
 
-## 6. Failure Analysis
+## 7. Failure Analysis
 3–5 representative failure cases, each with image, diagnosis and likely cause
 (e.g. checkerboard artefacts, incoherent anatomy, partial mode collapse).
 
-## 7. Recommendation
+## 8. Recommendation
 Evidence-based verdict to the project manager: is WGAN-GP worth its extra cost,
 is it safe to share (memorisation), and what would be needed before deployment.
-### 7.1 Limitations & Future Work
+### 8.1 Limitations & Future Work
 Small test set (3 patients), FID on greyscale MRI, 2D only, etc.
-
-## 8. Usage
-### 8.1 Dependencies
-Exact versions (Python, torch, torchvision, nibabel, numpy, matplotlib…).
-### 8.2 Reproducing Results
-Commands for training (each model), evaluation and prediction; seeds; data path.
-### 8.3 Example Inputs & Outputs
-What predict.py takes and produces.
 
 ## 9. AI Use Disclosure
 What tools were used, for what, and how outputs were verified.
