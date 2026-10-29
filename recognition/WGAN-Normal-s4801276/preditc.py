@@ -1,11 +1,14 @@
 import torch
 import json
-import vutils
+import matplotlib
+import matplotlib.pyplot as plt
+matplotlib.use("Agg")
 from pathlib import Path
 from hipmri_class import HipMRIDataset
 from main_model import Generator, nz
 from torchmetrics.functional.image import structural_similarity_index_measure as ssim
 from torchmetrics.image.fid import FrechetInceptionDistance
+import torchvision.utils as vutils
 
 VALIDATING = 1
 NUM_SAMPLES = 256
@@ -68,9 +71,22 @@ def compute_fid(fid, gen, batch=100):
 
     return fid.compute().item()
 
+def nearest_train(x, train_flat, chunk=256):
+    x_flat = x.flatten(1)
+    dists, idxs = [], []
+    for s in range(0, x_flat.size(0), chunk):
+        # Find shortest distance between image x and training images
+        d = torch.cdist(x_flat[s:s + chunk], train_flat)
+        m, i = d.min(dim=1)
+        dists.append(m)
+        idxs.append(i)
+
+    # Per-pixel RMSE
+    return torch.cat(dists) / x_flat.size(1) ** 0.5, torch.cat(idxs)
 
 if __name__ == "__main__":
 
+    train_set = HipMRIDataset(seg="train")
     val_set = HipMRIDataset(seg="validate")
     test_set = HipMRIDataset(seg="test")
 
@@ -117,6 +133,9 @@ if __name__ == "__main__":
         "WGAN-GP tuned": (BASE / "outputs/wgan_gp/checkpoints/wgan_gp_epoch_XXX.pt", "<EMA key>"),
         }
 
+        train = torch.stack([train_set[i] for i in range(len(train_set))]).to(device)
+        train_flat = train.flatten(1)
+
         # Same ref and real FID is used for all the models being tested
         ref = torch.stack([test_set[i] for i in range(len(test_set))]).to(device)
         fid = FrechetInceptionDistance(feature=2048, normalize=True,
@@ -124,11 +143,15 @@ if __name__ == "__main__":
         for s in range(0, ref.size(0), 100):
             fid.update(to_rgb_01(ref[s:s + 100]), real=True)
 
-        # Get a set of real images (may only need to run once)
+        # Get a set of real images
         torch.manual_seed(0)
         idx = torch.randperm(ref.size(0))[:32]
         vutils.save_image(ref[idx], BASE / "outputs" / "grid_real_test.png",
                           nrow=8, padding=2, normalize=True, value_range=(-1, 1))
+
+        # Get the nearest-neighbours for train vs ref (as a reference)
+        test_d, _ = nearest_train(ref, train_flat)
+        mem_threshold = torch.quantile(test_d, 0.01)
 
         test_results = {}
         # For each different model, evaluate it
