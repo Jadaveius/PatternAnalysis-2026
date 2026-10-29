@@ -127,14 +127,44 @@ All code in this project was run using Python 3.13. Exact dependencies for the d
 - torchvision.utils
 - torchmetrics (functional and image)
 
+### 3.2 Hyperparameters
+| Hyperparameter | DCGAN (baseline) | WGAN-GP (standard) | WGAN-GP (tuned) |
+|---|---|---|---|
+| **Data & architecture** | | | |
+| Image size | 1 × 128 × 64 | 1 × 128 × 64 | 1 × 128 × 64 |
+| Latent dimension (nz) | 100 | 100 | 100 |
+| Generator / critic base width (ngf / ndf) | 64 / 64 | 64 / 64 | 64 / 64 |
+| Generator normalisation | BatchNorm | BatchNorm | BatchNorm |
+| Discriminator / critic normalisation | BatchNorm | **GroupNorm(1, C) (layer norm)** | GroupNorm(1, C) (layer norm) |
+| Discriminator / critic output | Sigmoid (probability) | **Linear (unbounded score)** | Linear (unbounded score) |
+| Weight initialisation | N(0, 0.02) | N(0, 0.02) | N(0, 0.02) |
+| **Objective** | | | |
+| Loss | BCE (non-saturating G loss) | **Wasserstein + gradient penalty** | Wasserstein + gradient penalty |
+| Gradient penalty weight (λ) | – | **10** | 10 |
+| Critic updates per G update (n_critic) | 1 | **5** | 5 |
+| **Optimisation** | | | |
+| Optimiser | Adam | Adam | Adam |
+| Learning rate (G and D) | 2 × 10⁻⁴ | **1 × 10⁻⁴** | 1 × 10⁻⁴ |
+| Adam (β₁, β₂) | (0.5, 0.999) | **(0.0, 0.9)** | (0.0, 0.9) |
+| LR schedule | Constant | Constant | **Constant to epoch 125, then linear decay to 0 at epoch 250 (G ___ D)** |
+| Generator EMA | No | No | **Yes, decay = ___** |
+| Batch size | 128 | 128 | 128 |
+| **Training length** | | | |
+| Epochs | 50 | **250** | 250 |
+| Generator updates per epoch | 90 | **18** | 18 |
+| Total generator updates | 4,500 | 4,500 | 4,500 |
+| Total critic / discriminator updates | 4,500 | **22,500** | 22,500 |
+| Selected checkpoint (by validation ___) | epoch ___ | epoch ___ | epoch ___ |
 
-Exact versions (Python, torch, torchvision, nibabel, numpy, matplotlib…).
-### 3.2 Reproducing Results
+### 3.3 Reproducing Results
 **DCGAN**
+
 **WGAN-GP**
+
 **WGAN-GP Tuned**
+
 Commands for training (each model), evaluation and prediction; seeds; data path.
-### 3.3 Example Inputs & Outputs
+### 3.4 Example Inputs & Outputs
 What predict.py takes and produces.
 
 ## 4. Data
