@@ -90,8 +90,8 @@ if __name__ == "__main__":
             print(f"{file_path.name}: mean best-match SSIM {ssim_results[file_path.name]:.4f}")
             print(f"{file_path.name}: FID {fid_results[file_path.name]:.4f}")
 
-        best_model_ssim = max(ssim_results, key=ssim_results.get)
-        best_model_fid = min(fid_results, key=fid_results.get)
+        best_model_ssim = max(ssim_results, key=ssim_results.get) # best SSIM is large
+        best_model_fid = min(fid_results, key=fid_results.get) # best FID is small
         print(f"\nBest checkpoint: {best_model_ssim} (val SSIM {ssim_results[best_model_ssim]:.4f})")
         print(f"\nBest checkpoint: {best_model_fid} (val FID {fid_results[best_model_fid]:.4f})")
 
@@ -100,4 +100,37 @@ if __name__ == "__main__":
 
     # Should only be run once checkpoints have been picked
     else:
+        FINAL_MODELS = {
+        "DCGAN": (BASE / "outputs/dcgan/checkpoints/dcgan_epoch_050.pt", "netG"),
+        "WGAN-GP standard": (BASE / "outputs/wgan_gp_standard/checkpoints/wgan_gp_epoch_XXX.pt", "netG"),
+        "WGAN-GP tuned": (BASE / "outputs/wgan_gp/checkpoints/wgan_gp_epoch_XXX.pt", "<EMA key>"),
+        }
+
+        # Same ref and real FID is used for all the models being tested
         ref = torch.stack([test_set[i] for i in range(len(test_set))]).to(device)
+        fid = FrechetInceptionDistance(feature=2048, normalize=True,
+                                               reset_real_features=False).to(device)
+        for s in range(0, ref.size(0), 100):
+            fid.update(to_rgb_01(ref[s:s + 100]), real=True)
+
+        test_results = {}
+        # For each different model, evaluate it
+        for name, (path, key) in FINAL_MODELS.items():
+            torch.manual_seed(0) # Same noise as validity testing       
+            netG = load_generator(path, key)
+            with torch.no_grad():
+                gen = netG(torch.randn(NUM_SAMPLES, nz, 1, 1, device=device))
+
+            scores = best_ssim_match(gen, ref)
+            fid_score = compute_fid(fid, gen)
+
+            # Save results in dict for log/ease of find later
+            test_results[name] = {"checkpoint": path.name,
+                                  "ssim_mean": scores.mean().item(),
+                                  "ssim_std": scores.std().item(),
+                                  "fid": fid_score}
+            print(f"{name}: SSIM {scores.mean():.4f} ± {scores.std():.4f} | FID {fid_score:.2f}")
+
+        # Save results from model evaluation
+        with open(BASE / "outputs" / "test_results.json", "w") as f:
+            json.dump(test_results, f, indent=2)
