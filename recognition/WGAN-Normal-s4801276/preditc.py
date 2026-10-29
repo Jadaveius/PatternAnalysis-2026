@@ -1,5 +1,6 @@
 import torch
 import json
+import vutils
 from pathlib import Path
 from hipmri_class import HipMRIDataset
 from main_model import Generator, nz
@@ -44,6 +45,16 @@ def best_ssim_match(gen, ref, chunk=256):
             best[n] = torch.maximum(best[n], scores.max())
 
     return best
+
+def get_sample_grids(name, generator):
+    for seed in [1, 2, 3]:
+        torch.manual_seed(seed)
+
+        with torch.no_grad():
+            samples = generator(torch.randn(32, nz, 1, 1, device=device))
+
+        vutils.save_image(samples, BASE / "outputs" / f"grid_{name}_seed{seed}.png",
+                                  nrow=8, padding=2, normalize=True, value_range=(-1, 1))
 
 # Need to change images from [-1, 1] grayscale to [0, 1] RGB
 # Repeat gray channel 3 times to have 3 channels for RGB
@@ -121,6 +132,7 @@ if __name__ == "__main__":
             with torch.no_grad():
                 gen = netG(torch.randn(NUM_SAMPLES, nz, 1, 1, device=device))
 
+            get_sample_grids(name, gen)
             scores = best_ssim_match(gen, ref)
             fid_score = compute_fid(fid, gen)
 
