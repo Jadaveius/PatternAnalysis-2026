@@ -336,13 +336,32 @@ same way it was trained.
 | Generated / real NN ratio | 1.31 | 1.25 | 1.06 |
 | Samples closer than 99% of real test slices (expected ≈ 1% by chance) | 0.2% (1 / 540) | 0.4% (2 / 540) | 2.4% (13 / 540) |
 
-### 6.2 Memorisation Audit
+Between the two centre-crop models, DCGAN achieves a much better FID than the standard WGAN-GP (97.7 versus 191.7 above real data floor), but both achieve a very similar SSIM. This indicates that neither generator can properly represent unseen patient anatomy well. While both models were compared against test images cropped in the same way, a likely cause of the very low SSIM score is the cropping of the images. Meanwhile the tuned WGAN-GP reaches an average SSIM of 0.547, with 11.1% of slices exceeding 0.6. While this also does not meet the requirements for generated data, it is much closer in proximity to the > 0.6 requirement, with only changes in image cropping and latent space/feature size changes having been made. This suggests that there is a likely change further tuning and exploration of the WGAN-GP model could meet the requirements for generated patient images.
+
+### 6.2 Inverse SSIM
+MRI images are too different in structure (varied anatomy) to obtain a valid SSIM score by comparing a generated image with a set of test images and returning the maximum SSIM score. Due to this, GAN inversion is used to "reconstruct" test slices. This is achieved by optimising a latent vector z so that G(z) matches the slice, and then the SSIM is computed between the slice and its reconstruction.
+
+<div align="center">
+
+![DCGAN Inversion](images/dcgan/inversion_DCGAN.png)
+
+
+![Standard WGAN-GP Inversion](images/wgan_gp/inversion_wgan_gp.png)
+
+![DCGAN Inversion](images/wgan_gp_wide/inversion_wgan_gp_wide.png)
+### Figure 8: DCGAN (Top) Standard-WGAN (Middle) Tuned WGAN-GP (Bottom) Inversion
+
+</div>
+
+The reconstruction (test slices on top, inversions on bottom), show that all generators can recover a coards structure of bladder position, brightness levels, and primary dark/bright regions. The tuned model accurately reproduces the the body outline, background and bladder, which is a likely cause of the higher SSIM score, but the internal tissue is smoothed out and low in contrast. DCGAN's reconstructions are visibly sharper than those of the standard WGAN-GP, but the achieved SSIM is similar, suggesting that DCGAN may face more misalignments in texture despite being sharper in appearance.
+
+### 6.3 Memorisation Audit
 Nearest-neighbour distances (generated→train vs test→train), example
 nearest-neighbour pairs.
-### 6.3 Latent Space Interpolation
+### 6.4 Latent Space Interpolation
 Interpolation strip between two latent vectors; smoothness and anatomical
 plausibility.
-### 6.4 Resource Profiling
+### 6.5 Resource Profiling
 Table: parameters, peak VRAM, time per epoch, time per generator update,
 generation latency, GPU.
 
