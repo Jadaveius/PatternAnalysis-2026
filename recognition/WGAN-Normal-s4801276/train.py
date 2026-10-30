@@ -5,16 +5,19 @@ and moved into the correct format.
 """
 
 import os
+import json
 import time
 import torch
 import argparse
 import torch.nn as nn
 import torch.optim as optim
-from dataset import load_data
+from dataset import load_data, load_split
 from modules import Generator, Discriminator, Critic, weights_init
 from pathlib import Path
 import torchvision.utils as vutils
 import matplotlib.pyplot as plt
+from utils import load_generator, compute_fid, to_rgb_01, NUM_SAMPLES
+from torchmetrics.image.fid import FrechetInceptionDistance
 
 BASE = Path(__file__).resolve().parent
 
@@ -253,7 +256,6 @@ def train_dcgan(cfg, name):
             optimiserD.step() # Update D
 
             # Update G network: maximize log(D(G(z)))
-
             netG.zero_grad()
             label.fill_(real_label)  # fake labels are real for generator cost
 
@@ -302,7 +304,7 @@ def train_dcgan(cfg, name):
 def train_wgan_gp(cfg, name):
     """
     For training the WGAN model. Runs can be done fresh or be resumed from
-    a checkpoint
+    a checkpoint.
     """
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     out_dir = setup_out_dir(name)
@@ -403,6 +405,43 @@ def train_wgan_gp(cfg, name):
     save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_times, gen_ms)
     plot_wgan_curves(out_dir, G_losses, D_losses, W_estimates, GP_values, N_CRITIC)
     return netG, netD
+
+def validate(cfg, name):
+    """
+    For a given model, returns the "best" saved checkpoint by computing FID
+    score at each checkpoint.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    out_dir = setup_out_dir(name)
+
+    ref = load_split("validate", downsample=cfg["downsample"]).to(device)
+    
+    fid = FrechetInceptionDistance(feature=2048, normalize=True,
+                                    reset_real_features=False).to(device)
+    
+    for s in range(0, ref.size(0), 100):
+        fid.update(to_rgb_01(ref[s:s + 100]), real=True)
+
+    fid_results = {}
+
+    # For each checkpoint in the folder, validate
+    checkpoint_path = os.path.join(out_dir, "checkpoints")
+    # Go through them in order
+    for file_path in sorted(checkpoint_path.glob("*.pt")):
+        netG = load_generator(file_path, nz=cfg["nz"], ngf=cfg["ngf"])
+        torch.manual_seed(0) # Same noise for all checkpoints
+        
+        with torch.no_grad():
+            gen = netG(torch.randn(NUM_SAMPLES, cfg["nz"], 1, 1, device=device))
+
+        fid_results[file_path.name] = compute_fid(fid, gen)
+        print(f"{file_path.name}: FID {fid_results[file_path.name]:.4f}")
+
+    best_model_fid = min(fid_results, key=fid_results.get) # best FID is small
+    print(f"\nBest checkpoint: {best_model_fid} (val FID {fid_results[best_model_fid]:.4f})")
+
+    with open(BASE / "outputs" / f"val_results_{name}.json", "w") as f:
+        json.dump({"fid": fid_results}, f, indent=2)
 
 if __name__ == "__main__":
     # For ease of running/reproduction add main that allows running from the command line
