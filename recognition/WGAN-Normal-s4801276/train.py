@@ -532,13 +532,10 @@ if __name__ == "__main__":
     # For ease of running/reproduction add main that allows running from the command line
     parser = argparse.ArgumentParser(description="Train DCGAN or WGAN-GP on HipMRI 2D slices.")
 
-    parser.add_argument("--run", choices=CONFIGS.keys(),
+    parser.add_argument("--run", required=True, choices=CONFIGS.keys(),
                      help="Which configuration from configs to train.")
     parser.add_argument("--mode", default="train", choices=["train", "validate", "test"])
     args = parser.parse_args()
-
-    if args.mode in ("train", "validate") and args.run is None:
-        parser.error("--run is required for train and validate modes")
 
     # Can run DCGAN or the different versions of WGAN
     if args.mode == "train":
@@ -551,3 +548,6 @@ if __name__ == "__main__":
     # Can choose to validate existing training
     elif args.mode == "validate":
         validate(CONFIGS[args.run], args.run)
+        
+    elif args.mode == "test":
+        test(CONFIGS[args.run], args.run)
