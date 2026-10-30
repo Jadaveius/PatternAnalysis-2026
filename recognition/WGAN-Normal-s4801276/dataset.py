@@ -1,13 +1,13 @@
 """
 For loading and pre-processing of the HipMRI 2D slices dataset. HipMRIDataset object
-should be initialised for the required test/train/split set and can then be placed
+should be initialised for the required test/train/split set and is passed
 into Dataloader for Pytorch DCGAN and WGAN training/validating/evaluating.
 """
 
 import os
 import glob
 import torch
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, DataLoader
 import torch.nn.functional as F
 import nibabel as nib
 import numpy as np
@@ -73,3 +73,18 @@ class HipMRIDataset(Dataset):
 
     def __len__(self):
         return len(self.img_paths)
+
+def load_data(seg="train", dir=ROOT, batch_size=128, shuffle=None, downsample=False):
+    """
+    Returns a DataLoader for one train/validate/test split of the data. Can choose
+    segment, directory and preprocessing (downsample or crop) for HipMRIDataset.
+    """
+    dataset = HipMRIDataset(dir=dir, seg=seg, downsample=downsample)
+    return DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
+
+def load_split(seg, dir=ROOT, downsample=False):
+    """
+    Load an entire split into one tensor (N, 1, 128, 64), to be used for evaluation.
+    """
+    dataset = HipMRIDataset(seg=seg, dir=dir, downsample=downsample)
+    return torch.stack([dataset[i] for i in range(len(dataset))])
