@@ -5,6 +5,7 @@ and moved into the correct format.
 """
 
 import os
+import time
 import torch
 from pathlib import Path
 import torchvision.utils as vutils
@@ -29,7 +30,7 @@ def setup_out_dir(name):
     Set up the output directory for results of this model training.
     """
     out_dir = BASE / "outputs" / name
-    
+
     os.makedirs(os.path.join(out_dir, "samples"), exist_ok=True)
     os.makedirs(os.path.join(out_dir, "checkpoints"), exist_ok=True)
 
@@ -60,3 +61,28 @@ def save_checkpoint(out_dir, prefix, epoch, state):
     torch.save(state, path)
 
     print(f"Saved checkpoint at epoch {epoch + 1}")
+
+def profile_generation(netG, nz, device):
+    """
+    Will return the generation (inference) time for 64 images with
+    the generator at its current epoch.
+    """
+    training = netG.training
+
+    netG.eval()
+    with torch.no_grad():
+        # Generate noise
+        z = torch.randn(64, nz, 1, 1, device=device)
+        netG(z)
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.time()
+        netG(z)
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        gen_ms = (time.time() - t0) * 1000
+
+    netG.train(training)
+    return gen_ms
