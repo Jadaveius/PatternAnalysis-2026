@@ -397,25 +397,99 @@ The generated distribution overlaps the real distribution but is centred slightl
 
 </div>
 
-All 3 images show smooth changes from one side to the other, indicating that the generator in all cases has managed to learn a continuous latent space rather than memorising individual training slices. No frames degrade into noise or artefacts midway though interpolation, and can be considered "plausible" transitions within the limitations of each model (i.e. ignoring the overall anatomical quality/correctness of the images).
+All 3 images show smooth changes from one side to the other, indicating that the generator in all cases has managed to learn a continuous latent space rather than memorising individual training slices. No frames degrade into noise or artefacts midway though interpolation, and can be considered "plausible" transitions within the limitations of each model (i.e. ignoring the overall anatomical quality/correctness of the images). DCGAN has the largest structural change of the models, and while the transition is smooth and the image is symmetrical, it breaks up the tissue into an anatomically inplausible structure on the right side. Meanwhile the standard WGAN-GP maintains a consistent bladder shape throughout, without the tissue surround the bladder shifting with it accordingly. In this instance, the tuned WGAN-GP images are rather low in detail with less obvious constrast; a bladder appears to be form in the correct location towards the right side. While the tuned model does not perform particularly well in this instance, this is only a single interpolation and does not illustrate the overall quality of the generator (it mainly demonstrates the lack of memorisation and a continuous latent space).
 
 ### 6.5 Resource Profiling
-Table: parameters, peak VRAM, time per epoch, time per generator update,
-generation latency, GPU.
+
+<div align="center">
+
+| | DCGAN | WGAN-GP (standard) | WGAN-GP (tuned) |
+|---|:---:|:---:|:---:|
+| Generator parameters | 4,393,856 | 4,393,856 | 15,210,240 |
+| Discriminator / critic parameters | 2,771,712 | 2,771,712 | 2,771,712 |
+| Peak training VRAM | 616 MB | 914 MB | 1,148 MB |
+| Epochs | 50 | 250 | 250 |
+| Generator updates per epoch | 90 | 18 | 18 |
+| Mean epoch time | 24.1 s | 26.2 s | 32.4 s |
+| Time per generator update | 0.27 s | 1.46 s | 1.80 s |
+| Total training time (4,500 generator updates) | ~20 min | 109 min | 135 min |
+| Time to generate 64 images | 2.5 ms | 2.3 ms | 6.4 ms |
+
+</div>
+
+Per-epoch, each generator takes relatively the same amount of time, however due to the fact that the WGAN-GP generator only updates for every 5 critic runs, it must run a significantly larger number of epochs to achieve the same amount of generator iterations. There is a clear increased in peak VRAM across the 3, as the gradient penalty's second backward pass in WGAN-GP requires more memory than the single BCELoss in the DCGAN. Tuned WGAN-GP sees another (anticipated) increase as it adds additional features and latent space to the generator. Overall all models fall far below the expected maximum allowable memory and time from the feasibility report (4GB VRAM and 6h training).
 
 ## 7. Failure Analysis
 3–5 representative failure cases, each with image, diagnosis and likely cause
 (e.g. checkerboard artefacts, incoherent anatomy, partial mode collapse).
 
 ## 8. Recommendation
-Evidence-based verdict to the project manager: is WGAN-GP worth its extra cost,
-is it safe to share (memorisation), and what would be needed before deployment.
-### 8.1 Limitations & Future Work
-Small test set (3 patients), FID on greyscale MRI, 2D only, etc.
+**Verdict**
+
+At this stage, it cannot be recommended to use WGAN-GP to create a synthetic cohort of patient data as it did not meet the required evaluation metric (> 0.6 SSIM). However, more time should be spent tuning the WGAN-GP as it shows promise. Directly swapping from a standard DCGAN to a WGAN-GP is not recommended if further tuning is not done on the WGAN-GP model due to the higher time/memory computation budget.
+
+<div align="center">
+
+| Acceptance criterion (Section 1.1) | Result | Status |
+|---|---|---|
+| Inversion SSIM > 0.6 on test slices | Best: tuned WGAN-GP, 0.547 mean (11.1% of slices > 0.6) | ✗ Not met |
+| WGAN-GP outperforms the DCGAN baseline | Standard: worse FID, equal SSIM. Tuned: higher SSIM (different preprocessing) | ~ Partially |
+| No memorisation (NN audit) | No near-copies in any model; tuned closest (2.4% below threshold, layout-level similarity only) | ✓ Met |
+| Peak VRAM < 4 GB, training < 6 h | Max 1,148 MB, max 135 min | ✓ Met |
+
+</div>
+
+At an equal budget of 4,500 generator updates, the WGAN-GP trained more stably than the DCGAN, with no instability spikes in the critic/generator loss and a stable gradient penalty over time. Before applying additional latent space/generator features, the WGAN-GP actually performed worse in FID, and had a relatively equal SSIM. The improvement in loss alone with the standard WGAN-GP cannot justify changing from the base model.
+
+No model shows memorisation of training patient data, with the most similar cases occurring due to the same global layout rather than any direct copy of internal anatomty. This suggests that, with further improvements to the quality of image generation, the model may be able to be shared/utilised once all acceptance criteria are cleared.
+
+### 8.1 Limitations
+- **Small evaluation sets:** Validation and test contain only 4 and 3 patients, limiting how far
+  results generalise and making FID and the memorisation threshold noisy.
+- **Confounded tuned model:** Generator width and preprocessing changed together, so the tuned
+  model's improvement cannot be attributed to either alone.
+- **Different preprocessing:** The tuned model is evaluated on downsampled whole slices and the
+  others on the central crop, so their metrics are not directly comparable.
+- **Reduced data:** 2D slices only, at 128×64: the centre crop loses peripheral anatomy, and
+  downsampling loses fine detail.
+- **Metric limitations:** Inversion SSIM depends on the optimisation settings and mainly rewards large-scale
+  structure (sharper DCGAN reconstructions scored no higher than blurrier WGAN-GP ones).
+- **Checkpoint selection by FID only:** Other criteria (e.g. validation inversion SSIM) might
+  select different epochs.
+
+
+### 8.2 Future Work
+- **Isolate the tuned model's gains:** Train a standard-width WGAN-GP on downsampled whole slices.
+- **Stronger architectures:** Consider implementing a ResNet on the Generator/Critic to see if there are further improvements in generation quality (this was utilised in the WGAN-GP paper).
+- **More robust evaluation:** KID alongside FID, repeated runs with different seeds, larger test
+  sets, and checkpoint selection on multiple metrics.
+
 
 ## 9. AI Use Disclosure
-What tools were used, for what, and how outputs were verified.
+This project was completed with assistance from **Claude (Anthropic)**, used as a tutor, code
+reviewer and writing assistant throughout. I am responsible for all code, results and claims in
+this report; every AI-assisted component was run, inspected and checked by me as described below.
+
+**How AI was used**
+
+| Area | AI contribution | My contribution and verification |
+|---|---|---|
+| **Concepts** | Explanations of WGAN/WGAN-GP theory (Wasserstein distance, Lipschitz constraint, gradient penalty, why BatchNorm is removed from the critic), DCGAN architecture, SSIM/FID, and PyTorch details (tensor shapes, `unsqueeze`, intensity scaling, BatchNorm train/eval behaviour). | Cross-checked against Arjovsky et al. (2017), Gulrajani et al. (2017) and Radford et al. (2016); used to make and justify my own design decisions. |
+| **Feasibility & data audit** | Initial data-audit script and a draft structure for the feasibility review. | Rewrote the audit as `data_audit.py`, ran it on the real data, and wrote the review from its results. |
+| **Data pipeline** | `HipMRIDataset` verification of code. | Through this, I identified that my crop setting was cropping every slice rather than only the oversized ones (documented in Section 4.2). |
+| **Models** | Bug Identification. | The DCGAN is adapted from the PyTorch DCGAN tutorial; I wrote the WGAN-GP changes following Algorithm 1 of Gulrajani et al. and fixed the identified bugs; verified shapes and parameter counts. |
+| **Training code** | Reviewed my training loops; helped debug errors. | Ran every training configuration myself; checked loss curves, samples and checkpoints; restructured the code into the required files and verified it on the real data. |
+| **Evaluation** | Proposed and assisted in writing evaluation methods: best-match SSIM with a real-data ceiling check, GAN-inversion SSIM (after course staff guidance on paired SSIM), FID with a real-data floor, the nearest-neighbour memorisation audit, and latent interpolation. | Ran all evaluations, chose checkpoints on validation only, and inspected every figure; the ceiling check (real slices scoring 0.137) is my own measured result, which changed how SSIM was used. |
+| **Report** | Suggested the README structure, formatted tables (architecture, hyperparameters, results, resources) from my numbers, suggested key content for sections. | Supplied all numbers and figures; verified suggested key content before I wrote my report sections. |
+
+**Verification approach**
+- All code was executed by me on the real HipMRI data; AI-debugged functions were also tested by the
+  AI on synthetic data before use (e.g. planted near-copies for the memorisation audit, reachable
+  vs unreachable targets for inversion).
+- All reported numbers come from my own runs (`resources.txt`, `val_results_*.json`,
+  `test_results.json`).
+
 
 ## 10. References
 Arjovsky et al. 2017; Gulrajani et al. 2017; Radford et al. 2016;
-PyTorch DCGAN tutorial; HipMRI dataset source.
+PyTorch DCGAN tutorial;
