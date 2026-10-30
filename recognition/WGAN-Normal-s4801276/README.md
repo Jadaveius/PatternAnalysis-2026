@@ -1,8 +1,6 @@
 # Synthetic Prostate MRI Generation with WGAN-GP (HipMRI 2D)
 
-One-paragraph summary: what was built, the problem it solves, headline result
-(e.g. "WGAN-GP reached SSIM X vs DCGAN Y with no evidence of memorisation"). - ADDED LAST
-BASED ON RESULTS OF REPORT (like exec summary). 
+This project compares a DCGAN baseline model with two different WGAN-GP models. Once WGAN-GP features the exact same architecture (latent space, num generator features, etc) and identical data pre-processing, while the other model adjusts data pre-proessing and increases both latent space a generator feautres. The aim was to see if a GAN could produce realistic, sharable synthetic images without memorising patient scans (with a SSIM > 0.6). The final tuned WGAN-GP model attainted an average SSIM of 0.547, with 11.1% of generated images surpassing SSIM 0.6. At this stage, the final model cannot be recommended for deployment, however additional tuning to the final model presented in this report (i.e. changing to a ResNet architecture) may meet the SSIM acceptance criteria. No models appeared to memorise patient data and all models were under the computational requirements suggested, therefore with additional tuning it is suggested that a model capable of generatic non-memorised, high-quality synthetic images is plausible.
 > [!IMPORTANT]
 > **Please review** the two notes within the **4.2 Pre-Processing** section to understand the difference in displayed results for
 > `dcgan` and `wgan_gp` versus `wgan_gp_wide`.
