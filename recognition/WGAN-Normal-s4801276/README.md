@@ -97,43 +97,43 @@ Sigmoid to output a probability; the WGAN-GP critic outputs an unbounded score.
 
 ## 3. Usage
 ### 3.1 Dependencies
-All code in this project was run using Python 3.13. Exact dependencies for the different files are provided below:
-`data_audit.py`
-- os
-- re
-- nibabel
-- numpy
-- Counter from collections
+All code was run with **Python 3.13** on Windows 11 with an **NVIDIA GeForce RTX 3080** (CUDA 13.1).
+Third-party packages:
 
-`modules.py`
-- torch (including nn, optim and utils)
-- torchvision.utils
+| Package | Version | Used by |
+|---|---|---|
+| torch | 2.14.0+cu130 | all model, training and evaluation code |
+| torchvision | 0.29.0+cu130 | `train.py`, `predict.py` (saving image grids) |
+| torchmetrics | 1.9.0 | `utils.py` (SSIM), `train.py` (FID) |
+| torch-fidelity | 0.4.0 | required by torchmetrics' FID (Inception weights) |
+| scipy | 1.18.1 | required by torchmetrics' FID |
+| nibabel | 5.4.2 | `dataset.py`, `data_audit.py` (loading NIfTI slices) |
+| numpy | 2.5.2 | `dataset.py`, `data_audit.py` (preprocessing / audit only) |
+| matplotlib | 3.11.2 | `train.py` (loss, metric and histogram plots) |
 
-`dataset.py`
-- os
-- glob
-- Dataset from torch.utils
-- nibabel
-- numpy
+Imports per file (standard-library modules in *italics*):
 
-`train.py`
-- Insert here (must restructure files)
-
-`predict.py`
-- json
-- torch
-- matplotlib
-- Path from pathlib
-- torchvision.utils
-- torchmetrics (functional and image)
+| File | Purpose | Imports |
+|---|---|---|
+| `modules.py` | Generator, DCGAN discriminator, WGAN-GP critic, weight initialisation | `torch.nn` only |
+| `dataset.py` | `HipMRIDataset` (crop or downsample, clipping, scaling), `load_data` (DataLoader), `load_split` (whole split as a tensor) | *os*, *glob*, torch, `torch.utils.data`, `torch.nn.functional`, nibabel, numpy |
+| `utils.py` | Shared evaluation helpers: `load_generator`, `invert_ssim`, `compute_fid`, `nearest_train`, `to_rgb_01`; `BEST_CHECKPOINTS`, `NUM_SAMPLES` | torch, `modules`, torchmetrics (SSIM) |
+| `train.py` | Training (DCGAN, WGAN-GP), checkpoint validation, final testing, loss and metric plots; run configurations in `CONFIGS` | *os*, *json*, *time*, *argparse*, *pathlib*, torch (`nn`, `optim`), torchvision.utils, matplotlib, torchmetrics (FID), `dataset`, `modules`, `utils` |
+| `predict.py` | Example usage of a trained model: samples, inversion reconstructions, nearest-neighbour pairs, latent interpolation, printed results | *json*, *argparse*, *pathlib*, torch, torchvision.utils, `dataset`, `train`, `utils` |
+| `data_audit.py` | Standalone data audit (Section 1.3) | *os*, *re*, *collections*, nibabel, numpy |
 
 ### 3.2 Hyperparameters
-| Hyperparameter | DCGAN (baseline) | WGAN-GP (standard) | WGAN-GP (tuned) |
+Three configurations are compared; each is an entry in `CONFIGS` in `train.py`. First appearance of
+difference in configuration of hyperparameters are bolded within the table.
+
+| Hyperparameter | DCGAN (`dcgan`) | WGAN-GP standard (`wgan_gp`) | WGAN-GP tuned (`wgan_gp_wide`) |
 |---|---|---|---|
 | **Data & architecture** | | | |
+| Preprocessing | Central 128×64 crop | Central 128×64 crop | **Whole slice, downsampled to 128×64** |
 | Image size | 1 × 128 × 64 | 1 × 128 × 64 | 1 × 128 × 64 |
-| Latent dimension (nz) | 100 | 100 | 100 |
-| Generator / critic base width (ngf / ndf) | 64 / 64 | 64 / 64 | 64 / 64 |
+| Latent dimension (nz) | 100 | 100 | **128** |
+| Generator / critic base width (ngf / ndf) | 64 / 64 | 64 / 64 | **128** / 64 |
+| Generator parameters | 4,393,856 | 4,393,856 | **15,210,240** |
 | Generator normalisation | BatchNorm | BatchNorm | BatchNorm |
 | Discriminator / critic normalisation | BatchNorm | **GroupNorm(1, C) (layer norm)** | GroupNorm(1, C) (layer norm) |
 | Discriminator / critic output | Sigmoid (probability) | **Linear (unbounded score)** | Linear (unbounded score) |
@@ -146,26 +146,54 @@ All code in this project was run using Python 3.13. Exact dependencies for the d
 | Optimiser | Adam | Adam | Adam |
 | Learning rate (G and D) | 2 × 10⁻⁴ | **1 × 10⁻⁴** | 1 × 10⁻⁴ |
 | Adam (β₁, β₂) | (0.5, 0.999) | **(0.0, 0.9)** | (0.0, 0.9) |
-| LR schedule | Constant | Constant | **Constant to epoch 125, then linear decay to 0 at epoch 250 (G ___ D)** |
-| Generator EMA | No | No | **Yes, decay = ___** |
 | Batch size | 128 | 128 | 128 |
 | **Training length** | | | |
 | Epochs | 50 | **250** | 250 |
 | Generator updates per epoch | 90 | **18** | 18 |
 | Total generator updates | 4,500 | 4,500 | 4,500 |
 | Total critic / discriminator updates | 4,500 | **22,500** | 22,500 |
-| Selected checkpoint (by validation ___) | epoch ___ | epoch ___ | epoch ___ |
+| Selected checkpoint (lowest validation FID) | epoch 50 | epoch 240 | epoch 250 |
+
+The tuned configuration changes two things relative to the standard WGAN-GP: a wider generator
+(more capacity) and downsampled data instead of the central-cropped data. Its results are therefore evaluated 
+against equally downsampled test data and are not directly comparable with the centre-crop models.
 
 ### 3.3 Reproducing Results
-**DCGAN**
+**Data.** Adjust `ROOT` in `dataset.py` to match the location of your base HipMRI folder. Ensure that 
+`HipMRI/keras_slices_train`, `HipMRI/keras_slices_validate` and `HipMRI/keras_slices_test` all exist 
+within the main HipMRI folder you direct `ROOT` to. The provided
+patient-level splits are used unchanged (verified leakage-free by `data_audit.py`).
 
-**WGAN-GP**
+**Commands.** Run from the project folder. `--run` selects a configuration from `CONFIGS`.
+All outputs go to `outputs/<run>/`.
 
-**WGAN-GP Tuned**
+| Step | Command | Output |
+|---|---|---|
+| Data audit | `python data_audit.py` | Printed split counts, shapes, intensities, patient overlap |
+| Train | `python train.py --run dcgan --mode train`<br>`python train.py --run wgan_gp --mode train`<br>`python train.py --run wgan_gp_wide --mode train` | `checkpoints/` (every 25 epochs), `samples/epoch_NNN.png`, loss/metric plots, `resources.txt` |
+| Validate (choose checkpoint) | `python train.py --run <run> --mode validate` | Validation FID per checkpoint, best checkpoint printed; `val_results_<run>.json` |
+| Test (final values) | `python train.py --run <run> --mode test` | Test FID (with real-data floor), inversion SSIM, nearest-neighbour statistics; `test_results.json`, `nn_hist_<run>.png` |
+| Visualise | `python predict.py --run <run>` | See Section 3.4 |
 
-Commands for training (each model), evaluation and prediction; seeds; data path.
+After validating, set the chosen file for each run in `BEST_CHECKPOINTS` (`utils.py`) before
+testing or running `predict.py`.
+
+**Notes on reproduction.**
+- Evaluation is seeded to ensure fair comparisons between models.
+- The results in this report were produced with the pre-restructure versions of these scripts
+  (see redudnancy folder and commit history). New files adjusted to meet the spec requirements
+  all received short test runs to ensure identical functionality.
+
 ### 3.4 Example Inputs & Outputs
-What predict.py takes and produces.
+`predict.py` shows example usage of a trained model. **Input:** a run name such as
+`python predict.py --run wgan_gp_wide`. It loads that run's saved generator weights
+(`BEST_CHECKPOINTS[run]`) and the test split, preprocessed the same way as in training.
+
+**Outputs** (saved to `outputs/<run>/`):
+
+
+**Printed:** the SSIM of each displayed inversion, plus the run's full test-set results from
+`test_results.json` (FID and real-data floor, inversion SSIM, nearest-neighbour statistics).
 
 ## 4. Data
 ### 4.1 Dataset & Data Audit
