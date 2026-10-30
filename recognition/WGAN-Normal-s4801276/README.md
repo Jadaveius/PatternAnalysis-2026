@@ -10,7 +10,7 @@ BASED ON RESULTS OF REPORT (like exec summary).
 <div align="center">
 
 ![WGAN-GP-Tuned Training](images/wgan_gp_wide/wgan_gp_wide_anim.gif)
-### Figure 1: Animation of Final WGAN 250 Epoch Training
+### Figure 1: Animation of Final WGAN - 250 Epochs of Training
 
 </div>
 
@@ -192,8 +192,7 @@ All outputs go to `outputs/<run>/`.
 | Train | `python train.py --run dcgan --mode train`<br>`python train.py --run wgan_gp --mode train`<br>`python train.py --run wgan_gp_wide --mode train` | `checkpoints/` (every 25 epochs), `samples/epoch_NNN.png`, loss/metric plots, `resources.txt` |
 | Validate (choose checkpoint) | `python train.py --run <run> --mode validate` | Validation FID per checkpoint, best checkpoint printed; `val_results_<run>.json` |
 | Test (final values) | `python train.py --run <run> --mode test` | Test FID (with real-data floor), inversion SSIM, nearest-neighbour statistics; `test_results.json`, `nn_hist_<run>.png` |
-| Visualise | `python predict.py --run <run>` | Loads that run's saved generator weights and the test split, producing seeded image generation, interpolation, 
-ssim inversion and nearest neighbour pairs. Also prints results of `test_results.json`. |
+| Visualise | `python predict.py --run <run>` | Loads the run's saved generator weights and the test split, then saves seeded sample grids, a latent interpolation, GAN-inversion reconstructions (with SSIM) and nearest-neighbour pairs.<br>Also prints the run's `test_results.json`. |
 
 After validating, set the chosen file for each run in `BEST_CHECKPOINTS` (`utils.py`) before
 testing or running `predict.py`.
@@ -217,7 +216,7 @@ The provided dataset is already split into separate training, validation and tes
 - **99.5th-Percentile Clipping:** The data audit revealed the training data featured intensity values up to 1,150, however, the median highest-intensity value seen in training images was only 387.5. Since the data is min-max scaled from [-1, 1], any training scans that feature outlier high-intensity values will define the top of the scaling range for that slice. This would mean that the other lower-intensity pixels would be scaled down and squashed into a narrower, darker band of intensity values. To prevent this, intensity values for images are clipped to the 99.5th percentile.
 - **Downsampling to 128x64:** The network architecture in the DCGAN/WGAN papers was designed around a 64x64, so using the full resolution image would require an additional layer in both the generator and critic networks. Additionaly, downsampling reduces the total pixel count of the images, lowering expected memory usage and training time. While the 2:1 aspect ratio is preserved, it is expected that this pre-processing decision will prevent the generator from learning some of the finer details of the data.
 > [!NOTE]
-> Due to a bug in `dataset.py`, only `wgan_gp_wide` has a downsample applied from 256x128 to a 128x64 image (see Center Crop note for additional details).
+> Due to a bug in `dataset.py`, only `wgan_gp_wide` has a downsample applied from 256x128 to a 128x64 image (see Centre Crop note for additional details).
 
 ### 4.3 Splits
 **Train (91%) / Validate (5%) / Test (4%) Split**
@@ -232,9 +231,12 @@ plot is in generator iterations (one discriminator update per generator update),
 WGAN-GP plots are in critic iterations (five critic updates per generator update, so 22,500
 critic iterations = 4,500 generator updates).
 
-**DCGAN (baseline)**
+<div align="center">
 
 ![DCGAN Losses](images/dcgan//dcgan_losses.png)
+### Figure 2: DCGAN Baseline Losses per Iteration
+
+</div>
 
 After a very unstable first 100 or so iterations, the generator loss settles around roughly 4, while the
 discriminator loss falls to around 0.2; this indicates the discriminator increasingly
@@ -243,9 +245,12 @@ where the discriminator is briefly fooled and both losses jump before recovering
 Both losses are flat after around 1,500 iterations, so there is no further indication of whether sample quality
 is still improving.
 
-**WGAN-GP (standard)**
+<div align="center">
 
 ![WGAN-GP standard training curves](images/wgan_gp/wgan_gp_curves.png)
+### Figure 3: WGAN-GP Standard Losses per Iteration
+
+</div>
 
 The gradient penalty falls from 30 to approximately 0.5 within the first few hundred critic iterations
 and stays there for the rest of training, showing the Lipschitz constraint is being enforced.
@@ -255,16 +260,45 @@ from ~4,000 critic iterations onward. No instability spikes comparable to DCGAN 
 the W estimate does not decrease steadily over training as reported by Gulrajani et al., suggesting
 there are no further improvements in sample quality.
 
-**WGAN-GP (tuned: EMA + LR decay)**
+<div align="center">
 
 ![WGAN-GP tuned training curves](images/wgan_gp_wide/wgan_gp_wide_curves.png)
+### Figure 4: WGAN-GP Tuned Losses per Iteration
 
-Training follows the standard run closely until learning-rate decay begins at epoch 125. From then on,
-the W-estimate band and generator loss narrow noticeably compared with the standard run, consistent with smaller 
-updates reducing training variance as the learning rate approaches zero. The gradient penalty is unaffected.
+</div>
+
+The gradient penalty behaves very similary to the standard WGAN run, dropping quickly to a low penalty and remaining there for the duration of training. The Wasserstein estimate starts much higher, then falls and settles into a narrower band than the standard run. While the W values cannot be directly compared since the critic's scale depends on the data, it suggests that the critic estimates are steadier.
 
 ### 5.2 Generated Samples
-Uncurated grids per model; progression figure (epochs 1 / 10 / 25 / final).
+All grids below are uncurated, and display the first 32 samples produced from random seed 1, with no selection. Additional seed 2 and 3 images are available within the respective model subfolder of `images/`.
+
+<div align="center">
+
+| Real Test Slices (Centre Crop) | DCGAN |
+|---|---|
+| ![Real Seeded Images](images/wgan_gp/grid_real_test.png) | ![DCGAN Seed 1](images/dcgan/grid_dcgan_seed1.png) |
+### Figure 5: Real Images vs Generated DCGAN Images
+
+</div>
+
+<div align="center">
+
+| Real Test Slices (Centre Crop) | WGAN Standard |
+|---|---|
+| ![Real Seeded Images](images/wgan_gp/grid_real_test.png) | ![WGAN-GP Seed 1](images/wgan_gp/grid_wgan_gp_seed1.png) |
+### Figure 6: Real Images vs Generated Standard WGAN-GP Images
+
+</div>
+
+<div align="center">
+
+| Real Test Slices (Downsampled) | WGAN-GP (Tuned) |
+|---|---|
+| ![Real Seeded Images](images/wgan_gp/grid_real_test.png) | ![WGAN-GP Tuned Seed 1](images/wgan_gp_wide/grid_wgan_gp_wide_seed1.png) |
+### Figure 7: Real Images vs Generated Tuned WGAN_GP Images
+
+</div>
+
 
 ### 5.3 Tuned WGAN-GP
 After the first two models were trained using a cropped version of the dataset, the final version of the WGAN was
