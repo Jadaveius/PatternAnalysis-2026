@@ -34,10 +34,8 @@ CONFIGS = {
                   ngf=64, downsample=False),
     "wgan_gp": dict(model="wgan_gp", epochs=250, lr=0.0001, betas=(0.0, 0.9), nz=100,
                   ngf=64, downsample=False),
-    "wgan_gp_extend": dict(model="wgan_gp", epochs=1000, lr=0.0001, betas=(0.0, 0.9), nz=100,
-                      ngf=64, downsample=False),
-    "wgan_gp_wide": dict(model="wgan_gp", epochs=500, lr=0.0001, betas=(0.0, 0.9), nz=128,
-                      ngf=128, downsample=True, resume="outputs/wgan_gp_wide/checkpoints/wgan_gp_epoch_250.pt")
+    "wgan_gp_wide": dict(model="wgan_gp", epochs=250, lr=0.0001, betas=(0.0, 0.9), nz=128,
+                      ngf=128, downsample=True)
 }
 
 
