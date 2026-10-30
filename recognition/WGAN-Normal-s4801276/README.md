@@ -418,8 +418,17 @@ All 3 images show smooth changes from one side to the other, indicating that the
 Per-epoch, each generator takes relatively the same amount of time, however due to the fact that the WGAN-GP generator only updates for every 5 critic runs, it must run a significantly larger number of epochs to achieve the same amount of generator iterations. There is a clear increased in peak VRAM across the 3, as the gradient penalty's second backward pass in WGAN-GP requires more memory than the single BCELoss in the DCGAN. Tuned WGAN-GP sees another (anticipated) increase as it adds additional features and latent space to the generator. Overall all models fall far below the expected maximum allowable memory and time from the feasibility report (4GB VRAM and 6h training).
 
 ## 7. Failure Analysis
-3–5 representative failure cases, each with image, diagnosis and likely cause
-(e.g. checkerboard artefacts, incoherent anatomy, partial mode collapse).
+**Observation:** Centre-crop samples contain realistic elements (bladder-like shapes, tissue boundaries) but arrange them without anatomical coherence. There is no left-right symmetry or consistent orange layout and some sample are almost all texture (see Section 5.3 DCGAN/Standard WGAN-GP for images).
+**Diagnosis:** The central 128x64 image crop removes landmarks that anchor the pelvis layout such as the body outline and fermoral heads. Low inversion SSIM (approximately 0.37) in both confirms they cannot accurately represent unseen anatomy.
+**Evidence of Cause:** The tuned model with whole slices better reproduces the global layout and raises inversion SSIM to 0.55 (although increase in generator features may also be a contributor).
+
+**Observation:** In the inversion figures across all models, slices with a large, smooth bladder were reconstructed well, while those with smaller, complex structures became blurred/streaked with less clear boundaries and texture (see Section 6.2).
+**Diagnosis:** The generators have all been able to learn large-scale patterns better than the fine anatomy.
+**Mitigation:** Higher image resolution usage, adaption in architecture (to support larger images or introduce ResNets to preserve fine image details).
+
+**Observation:** Tuned samples have a plausable outline, but the top and bottom margins are not sharp, and many images have low contrast internally with mid-grey tissue and anatomical features, sometimes appearing nearly featureless (see Section 5.3).
+**Diagnosis:** Downsampling halves resolution, so fine internal structures are underrepresented in the training data. The highly contrasting outlines are learned more easily due to their size even at lower resolution.
+**Implication:** Global layout is now correct, so the remaining fidelity gap lies in the internal anatomy. Architecture, capacity and resolution improvements should be aimed at improving this aspect of generated images.
 
 ## 8. Recommendation
 **Verdict**
