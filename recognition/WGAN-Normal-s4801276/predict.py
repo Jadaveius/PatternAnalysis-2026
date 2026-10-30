@@ -1,242 +1,87 @@
 import torch
 import json
-import matplotlib
-import matplotlib.pyplot as plt
-matplotlib.use("Agg")
 from pathlib import Path
-from hipmri_class import HipMRIDataset
-from main_model import Generator, nz
-from torchmetrics.functional.image import structural_similarity_index_measure as ssim
+from utils import load_generator, compute_fid, nearest_train, to_rgb_01, invert_ssim
+from utils import NUM_SAMPLES, BEST_CHECKPOINTS
+from train import setup_out_dir
+from dataset import load_split
 from torchmetrics.image.fid import FrechetInceptionDistance
 import torchvision.utils as vutils
 
-VALIDATING = False
-NUM_SAMPLES = 256
-
 BASE = Path(__file__).resolve().parent
-GEN_PATH = BASE / "outputs" / "wgan_gp_ema_lrd" / "checkpoints"
 
-folder_path = GEN_PATH
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-# Can load the generator data from a saved model
-def load_generator(path, key="netG"):
-    # Get the saved model
-    model = torch.load(path, map_location=device)
-    print(path, "keys:", list(model.keys()), "epoch:", model["epoch"])
-
-    netG = Generator(ngpu=1).to(device)
-    netG.load_state_dict(model[key])
-    netG.eval()
-
-    return netG
-
-# For each generated image find the highest SSIM against a reference slice
-# (can be validate or test)
-def best_ssim_match(gen, ref, chunk=256):
-    best = torch.full((gen.size(0),), -1.0, device=gen.device)
-
-    for n in range(gen.size(0)):
-        # For each generated image
-        g = gen[n:n + 1]
-        # Compare against some reference images
-        for s in range(0, ref.size(0), chunk):
-            r = ref[s:s + chunk]
-            # Get SSIM, data_range is because images are across [-1, 1]
-            scores = ssim(g.expand_as(r), r, data_range=2.0, reduction=None)
-            # Each generated image is stored with the best found score
-            best[n] = torch.maximum(best[n], scores.max())
-
-    return best
-
-# GAN inversion: for each reference slice, optimise a latent z so that G(z) ≈ slice,
-# then compute the paired SSIM between the slice and its reconstruction G(z)
-# Returns (reconstructions, per-slice SSIM)
-def invert_ssim(netG, ref, steps=500, lr=0.05, z_reg=1e-3, batch=64, seed=0):
-   
-    netG.eval()
-    for p in netG.parameters():
-        p.requires_grad_(False) # only z is optimised, not the generator
-
-    torch.manual_seed(seed)
-
-    recons, scores = [], []
-    for s in range(0, ref.size(0), batch):
-        x = ref[s:s + batch]
-        z = torch.randn(x.size(0), nz, 1, 1, device=x.device, requires_grad=True)
-        opt = torch.optim.Adam([z], lr=lr)
-
-        for _ in range(steps):
-            opt.zero_grad()
-            loss = torch.nn.functional.mse_loss(netG(z), x) + z_reg * z.pow(2).mean()
-            loss.backward()
-            opt.step()
-
-        with torch.no_grad():
-            r = netG(z)
-            recons.append(r)
-            scores.append(ssim(r, x, data_range=2.0, reduction=None))
-
-    for p in netG.parameters():
-        p.requires_grad_(True)
-
-    return torch.cat(recons), torch.cat(scores)
-
-def get_sample_grids(name, generator):
+def get_sample_grids(name, generator, device, nz, out_dir):
+    """
+    Saves sample grids from three pre-chosen seeds to analyse generator
+    output.
+    """
     for seed in [1, 2, 3]:
         torch.manual_seed(seed)
 
         with torch.no_grad():
             samples = generator(torch.randn(32, nz, 1, 1, device=device))
 
-        vutils.save_image(samples, BASE / "outputs" / f"grid_{name}_seed{seed}.png",
+        vutils.save_image(samples, out_dir / f"grid_{name}_seed{seed}.png",
                                   nrow=8, padding=2, normalize=True, value_range=(-1, 1))
 
-# Need to change images from [-1, 1] grayscale to [0, 1] RGB
-# Repeat gray channel 3 times to have 3 channels for RGB
-to_rgb_01 = lambda x: ((x + 1) / 2).clamp(0, 1).repeat(1, 3, 1, 1)
 
-def compute_fid(fid, gen, batch=100):
-    fid.reset() # Clear generated features
+def generate_results(cfg, name):
+    """
+    Generate results and visualisations for saved models based on checkpoint entry
+    in utils.py BEST_CHECKPOINTS.
+    """
 
-    for s in range(0, gen.size(0), batch):
-        fid.update(to_rgb_01(gen[s:s + batch]), real=False)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    out_dir = setup_out_dir(name)
 
-    return fid.compute().item()
+    train = load_split("train", downsample=cfg["downsample"]).to(device)
+    train_flat = train.flatten(1)
+    ref = load_split("test", downsample=cfg["downsample"]).to(device)
 
-def nearest_train(x, train_flat, chunk=256):
-    x_flat = x.flatten(1)
-    dists, idxs = [], []
-    for s in range(0, x_flat.size(0), chunk):
-        # Find shortest distance between image x and training images
-        d = torch.cdist(x_flat[s:s + chunk], train_flat)
-        m, i = d.min(dim=1)
-        dists.append(m)
-        idxs.append(i)
+    # Get a set of real images
+    torch.manual_seed(0)
+    idx = torch.randperm(ref.size(0))[:32]
+    vutils.save_image(ref[idx], out_dir / "grid_real_test.png",
+                        nrow=8, padding=2, normalize=True, value_range=(-1, 1))
 
-    # Per-pixel RMSE
-    return torch.cat(dists) / x_flat.size(1) ** 0.5, torch.cat(idxs)
+    netG = load_generator(out_dir / "checkpoints" / BEST_CHECKPOINTS[name],
+                              device=device, nz=cfg["nz"], ngf=cfg["ngf"])
 
-if __name__ == "__main__":
+    torch.manual_seed(0)
+    with torch.no_grad():
+        # Want to generate for size of test set
+        gen = netG(torch.randn(ref.size(0), cfg["nz"], 1, 1, device=device))
+    
+    get_sample_grids(name, netG, device, cfg["nz"], out_dir)
 
-    train_set = HipMRIDataset(seg="train")
-    val_set = HipMRIDataset(seg="validate")
-    test_set = HipMRIDataset(seg="test")
+    # Figure: test slices (top) vs their reconstructions (bottom)
+    pick = torch.arange(0, ref.size(0), ref.size(0) // 8)[:8]
+    recon, inv_scores = invert_ssim(netG, ref[pick], cfg["nz"])
 
-    if VALIDATING:
-        ref = torch.stack([val_set[i] for i in range(len(val_set))]).to(device)
+    print("Inversion SSIM of displayed test slices (left to right): "
+          + ", ".join(f"{s:.3f}" for s in inv_scores.tolist()))
+    print(f"Mean over these 8: {inv_scores.mean():.3f}")
 
-        fid = FrechetInceptionDistance(feature=2048, normalize=True,
-                                       reset_real_features=False).to(device)
-        for s in range(0, ref.size(0), 100):
-            fid.update(to_rgb_01(ref[s:s + 100]), real=True)
+    vutils.save_image(torch.cat([ref[pick], recon]),
+                        BASE / "outputs" / f"inversion_{name}.png",
+                        nrow=8, padding=2, normalize=True, value_range=(-1, 1))
 
-        ssim_results = {}
-        fid_results = {}
+    gen_d, gen_idx = nearest_train(gen, train_flat)
+    order = gen_d.argsort()[:8]
+    vutils.save_image(torch.cat([gen[order], train[gen_idx[order]]]),
+                        BASE / "outputs" / f"nn_pairs_{name}.png",
+                        nrow=8, padding=2, normalize=True, value_range=(-1, 1))
 
-        # For each checkpoint in the folder, validate
-        for file_path in sorted(folder_path.glob("*.pt")):
-            netG = load_generator(file_path)
-            torch.manual_seed(0) # Same noise for all checkpoints
-            
-            with torch.no_grad():
-                gen = netG(torch.randn(NUM_SAMPLES, nz, 1, 1, device=device))
+    # Print out results from the previous test
+    results_path = out_dir / "test_results.json"
 
-
-            fid_results[file_path.name] = compute_fid(fid, gen)
-            print(f"{file_path.name}: FID {fid_results[file_path.name]:.4f}")
-
-        best_model_fid = min(fid_results, key=fid_results.get) # best FID is small
-        print(f"\nBest checkpoint: {best_model_fid} (val FID {fid_results[best_model_fid]:.4f})")
-
-        with open(BASE / "outputs" / f"val_results_{GEN_PATH.parent.name}.json", "w") as f:
-            json.dump({"ssim": ssim_results, "fid": fid_results}, f, indent=2)
-
-    # Should only be run once checkpoints have been picked
+    if results_path.exists():
+        with open(results_path) as f:
+            results = json.load(f) # read the file back into a Python dict
+        print(json.dumps(results, indent=2)) # print it neatly formatted
     else:
-        FINAL_MODELS = {
-        "DCGAN": (BASE / "outputs/dcgan/checkpoints/dcgan_epoch_050.pt", "netG"),
-        "WGAN-GP standard": (BASE / "outputs/wgan_gp/checkpoints/wgan_gp_epoch_240.pt", "netG"),
-        "WGAN-GP tuned": (BASE / "outputs/wgan_gp_ema_lrd/checkpoints/wgan_gp_epoch_250.pt", "emaG"),
-        }
-
-        train = torch.stack([train_set[i] for i in range(len(train_set))]).to(device)
-        train_flat = train.flatten(1)
-
-        # Same ref and real FID is used for all the models being tested
-        ref = torch.stack([test_set[i] for i in range(len(test_set))]).to(device)
-        fid = FrechetInceptionDistance(feature=2048, normalize=True,
-                                               reset_real_features=False).to(device)
-        for s in range(0, ref.size(0), 100):
-            fid.update(to_rgb_01(ref[s:s + 100]), real=True)
-
-        # Get a set of real images
-        torch.manual_seed(0)
-        idx = torch.randperm(ref.size(0))[:32]
-        vutils.save_image(ref[idx], BASE / "outputs" / "grid_real_test.png",
-                          nrow=8, padding=2, normalize=True, value_range=(-1, 1))
-
-        # Get the nearest-neighbours for train vs ref (as a reference)
-        test_d, _ = nearest_train(ref, train_flat)
-        mem_threshold = torch.quantile(test_d, 0.01)
-
-        test_results = {}
-        # For each different model, evaluate it
-        for name, (path, key) in FINAL_MODELS.items():
-            torch.manual_seed(0) # Same noise as validity testing       
-            netG = load_generator(path, key)
-            with torch.no_grad():
-                # Want to generate for size of test set
-                gen = netG(torch.randn(ref.size(0), nz, 1, 1, device=device))
-
-            get_sample_grids(name, netG)
-            fid_score = compute_fid(fid, gen)
-
-            print(f"{name}: FID {fid_score:.2f}")
-
-            # Save results in dict for log/ease of find later
-            test_results[name] = {"checkpoint": path.name,
-                                  "fid": fid_score}
-
-            # GAN-inversion SSIM: paired reconstruction of each unseen test slice (target > 0.6)
-            recon, inv_scores = invert_ssim(netG, ref)
-            test_results[name].update({"inv_ssim_mean": inv_scores.mean().item(),
-                                       "inv_ssim_std": inv_scores.std().item(),
-                                       "inv_frac_above_0.6": (inv_scores > 0.6).float().mean().item()})
-            
-            print(f"{name}: inversion SSIM {inv_scores.mean():.4f} ± {inv_scores.std():.4f} "
-                  f"({(inv_scores > 0.6).float().mean():.1%} of slices > 0.6)")
-
-            # Figure: test slices (top) vs their reconstructions (bottom)
-            pick = torch.arange(0, ref.size(0), ref.size(0) // 8)[:8]
-            vutils.save_image(torch.cat([ref[pick], recon[pick]]),
-                              BASE / "outputs" / f"inversion_{name}.png",
-                              nrow=8, padding=2, normalize=True, value_range=(-1, 1))
-
-            # Nearest-neighbour memorisation audit
-            gen_d, gen_idx = nearest_train(gen, train_flat)
-            frac_close = (gen_d < mem_threshold).float().mean().item()
-            test_results[name].update({"nn_gen_median": gen_d.median().item(),
-                                       "nn_test_median": test_d.median().item(),
-                                       "nn_frac_below_test_p1": frac_close})
-            
-            print(f"{name}: NN RMSE median gen {gen_d.median():.3f} vs test {test_d.median():.3f} | "
-                  f"{frac_close:.1%} closer than 99% of real test slices")
-
-            plt.figure(figsize=(7, 4))
-            plt.hist(test_d.cpu(), bins=40, alpha=0.6, density=True, label="Real test → train")
-            plt.hist(gen_d.cpu(), bins=40, alpha=0.6, density=True, label=f"{name} → train")
-            plt.axvline(mem_threshold.item(), color="k", ls="--", label="Test 1st percentile")
-            plt.xlabel("RMSE to nearest training slice"); plt.ylabel("Density"); plt.legend()
-            plt.tight_layout()
-            plt.savefig(BASE / "outputs" / f"nn_hist_{name}.png", dpi=150); plt.close()
-
-            order = gen_d.argsort()[:8]
-            vutils.save_image(torch.cat([gen[order], train[gen_idx[order]]]),
-                              BASE / "outputs" / f"nn_pairs_{name}.png",
-                              nrow=8, padding=2, normalize=True, value_range=(-1, 1))
+        print(f"No test results yet, run: python train.py --run {name} --mode test")
 
 
-        # Save results from model evaluation
-        with open(BASE / "outputs" / "test_results.json", "w") as f:
-            json.dump(test_results, f, indent=2)
+#if __name__ == "__main__":
+    # Do smthg
