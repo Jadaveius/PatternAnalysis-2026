@@ -297,7 +297,8 @@ def train_dcgan(cfg, name):
 
     peak_vram = torch.cuda.max_memory_allocated() / 2**20 if device.type == "cuda" else float("nan")
     gen_ms = profile_generation(netG, nz, device)
-    save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_times, gen_ms)
+    save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_times, num_epochs,
+                   gen_ms)
     plot_dcgan_loss(out_dir, G_losses, D_losses)
 
     return netG, netD
@@ -403,7 +404,8 @@ def train_wgan_gp(cfg, name):
 
     peak_vram = torch.cuda.max_memory_allocated() / 2**20 if device.type == "cuda" else float("nan")
     gen_ms = profile_generation(netG, nz, device)
-    save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_times, gen_ms)
+    save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_times, num_epochs, 
+                   gen_ms)
     plot_wgan_curves(out_dir, G_losses, D_losses, W_estimates, GP_values, N_CRITIC)
     return netG, netD
 
