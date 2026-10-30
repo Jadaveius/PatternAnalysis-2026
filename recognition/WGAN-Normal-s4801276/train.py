@@ -6,6 +6,7 @@ and moved into the correct format.
 
 import os
 import torch
+import torchvision.utils as vutils
 
 # Configurations of the different models that have been tested in this project
 CONFIGS = {
@@ -18,6 +19,20 @@ CONFIGS = {
     "wgan_gp_wide": dict(model="wgan_gp_wide", epochs=1000, lr=0.0001, betas=(0.0, 0.9), nc=1, nz=128,
                       ngf=128, ndf=64, downsample=True)
 }
+
+def save_sample_grid(netG, noise, out_dir, epoch):
+    """
+    Saves a sample grid of current generator output for some noise and
+    saves the image result. For purpose of viewing training progression
+    and creating generator training animations.
+    """
+    # Sample grid from the fixed noise (same z every time, so grids are comparable)
+    with torch.no_grad():
+        # Noise SHOULD BE SAME (seeded) for all epochs of training
+        fake = netG(noise).cpu()
+
+    grid = vutils.make_grid(fake, nrow=8, padding=2, normalize=True, value_range=(-1, 1))
+    vutils.save_image(grid, os.path.join(out_dir, "samples", f"epoch_{epoch + 1:03d}.png"))
 
 def save_checkpoint(out_dir, prefix, epoch, state):
     """
