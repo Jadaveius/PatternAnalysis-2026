@@ -174,6 +174,131 @@ def gradient_penalty(critic, real, fake):
     grad = torch.autograd.grad(critic(x_hat).sum(), x_hat, create_graph=True)[0]
     return ((grad.flatten(1).norm(2, dim=1) - 1) ** 2).mean()
 
+def train_dcgan(cfg, name):
+    """
+    For training the baseline DCGAN model.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    out_dir = setup_out_dir(name)
+    nz, ngf, num_epochs = cfg["nz"], cfg["ngf"], cfg["epochs"]
+
+    train_loader = load_data("train", batch_size=BATCH_SIZE, downsample=cfg["downsample"])
+
+    netG = Generator(NGPU, nz, ngf, NC).to(device)
+    netG.apply(weights_init)
+    netD = Discriminator(NGPU, NDF, NC).to(device)
+    netD.apply(weights_init)
+
+    optimiserG = optim.Adam(netG.parameters(), lr=cfg["lr"], betas=cfg["betas"])
+    optimiserD = optim.Adam(netD.parameters(), lr=cfg["lr"], betas=cfg["betas"])
+
+    criterion = nn.BCELoss()
+
+    # Fixed noise for the per-epoch sample grids (seeded so it is reproducible)
+    fixed_noise = torch.randn(16, nz, 1, 1, generator=torch.Generator().manual_seed(0)).to(device)
+
+    G_losses, D_losses, epoch_times = [], [], []
+    # Establish convention for real and fake labels during training
+    real_label = 1.
+    fake_label = 0.
+
+    gpu_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"
+    n_params_G = sum(p.numel() for p in netG.parameters())
+    n_params_D = sum(p.numel() for p in netD.parameters())
+
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+
+    print("Starting Training Loop...")
+    for epoch in range(num_epochs):
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.time()
+    
+        # For each batch in the dataloader
+        for i, data in enumerate(train_loader, 0):
+            # Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+            netD.zero_grad()  
+
+            ## Train with all-real batch
+            # Format batch
+            real_cpu = data.to(device)
+            b_size = real_cpu.size(0)
+            label = torch.full((b_size,), real_label, dtype=torch.float, device=device)
+
+            # Forward pass real batch through D
+            output = netD(real_cpu).view(-1)
+            # Calculate loss on all-real batch
+            errD_real = criterion(output, label)
+            # Calculate gradients for D in backward pass
+            errD_real.backward()
+            D_x = output.mean().item()
+
+            ## Train with all-fake batch
+            noise = torch.randn(b_size, nz, 1, 1, device=device)
+            # Generate fake image batch with G
+            fake = netG(noise)
+            label.fill_(fake_label)
+
+            # Classify all fake batch with D
+            output = netD(fake.detach()).view(-1)
+            # Calculate D's loss on the all-fake batch
+            errD_fake = criterion(output, label)
+            # Calculate the gradients for this batch, accumulated (summed) with previous gradients
+            errD_fake.backward()
+            D_G_z1 = output.mean().item()
+            # Compute error of D as sum over the fake and the real batches
+            errD = errD_real + errD_fake
+            
+            optimiserD.step() # Update D
+
+            # Update G network: maximize log(D(G(z)))
+
+            netG.zero_grad()
+            label.fill_(real_label)  # fake labels are real for generator cost
+
+            # Since we just updated D, perform another forward pass of all-fake batch through D
+            output = netD(fake).view(-1)
+            # Calculate G's loss based on this output
+            errG = criterion(output, label)
+            # Calculate gradients for G
+            errG.backward()
+            D_G_z2 = output.mean().item()
+            # Update G
+            optimiserG.step()
+
+            # Output training stats
+            if i % 50 == 0:
+                print('[%d/%d][%d/%d]\tLoss_D: %.4f\tLoss_G: %.4f\tD(x): %.4f\tD(G(z)): %.4f / %.4f'
+                    % (epoch, num_epochs, i, len(train_loader),
+                        errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
+
+            # Save Losses for plotting later
+            G_losses.append(errG.item())
+            D_losses.append(errD.item())
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+
+        epoch_times.append(time.time() - t0)
+        print(f"Epoch {epoch + 1} took {epoch_times[-1]:.1f} s")
+
+        save_sample_grid(netG, fixed_noise, out_dir, epoch)
+        
+        if (epoch + 1) % SAVE_EVERY == 0 or epoch == num_epochs - 1:
+            save_checkpoint(out_dir, "dcgan", epoch, {
+                "netG": netG.state_dict(), "netD": netD.state_dict(),
+                "optG": optimiserG.state_dict(), "optD": optimiserD.state_dict(),
+                "G_losses": G_losses, "D_losses": D_losses,
+            })
+
+    peak_vram = torch.cuda.max_memory_allocated() / 2**20 if device.type == "cuda" else float("nan")
+    gen_ms = profile_generation(netG, nz, device)
+    save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_times, gen_ms)
+    plot_dcgan_loss(out_dir, G_losses, D_losses)
+
+    return netG, netD
+
 def train_wgan_gp(cfg, name):
     """
     For training the WGAN model. Runs can be done fresh or be resumed from
@@ -228,7 +353,7 @@ def train_wgan_gp(cfg, name):
         t0 = time.time()
 
         for i, data in enumerate(train_loader):
-            # (1) Critic update: D(G(z)) - D(x) + lambda * GP
+            # Critic update: D(G(z)) - D(x) + lambda * GP
             real = data.to(device)
             b_size = real.size(0)
             fake = netG(torch.randn(b_size, nz, 1, 1, device=device)).detach()
@@ -246,7 +371,7 @@ def train_wgan_gp(cfg, name):
             GP_values.append(gp.item())
             D_losses.append(loss_D.item())
 
-            # (2) Generator update every N_CRITIC critic steps: minimise -D(G(z))
+            # Generator update every N_CRITIC critic steps: minimise -D(G(z))
             if (i + 1) % N_CRITIC == 0:
                 loss_G = -netD(netG(torch.randn(b_size, nz, 1, 1, device=device))).mean()
                 optimiserG.zero_grad()
@@ -289,5 +414,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     cfg = CONFIGS[args.run]
+    # Can run DCGAN or the different versions of WGAN
     if cfg["model"] == "wgan_gp":
         train_wgan_gp(cfg, args.run)
+
+    elif cfg["model"] == "dcgan":
+        train_dcgan(cfg, args.eun)
