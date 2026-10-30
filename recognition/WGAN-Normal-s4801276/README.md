@@ -2,11 +2,17 @@
 
 One-paragraph summary: what was built, the problem it solves, headline result
 (e.g. "WGAN-GP reached SSIM X vs DCGAN Y with no evidence of memorisation"). - ADDED LAST
-BASED ON RESULTS OF REPORT (like exec summary). **Please review** the two notes within the
-**4.2 Pre-Processing** section to understand the difference in displayed results for
-`dcgan` and `wgan_gp` versus `wgan_gp_wide`.
+BASED ON RESULTS OF REPORT (like exec summary). 
+> [!IMPORTANT]
+> **Please review** the two notes within the **4.2 Pre-Processing** section to understand the difference in displayed results for
+> `dcgan` and `wgan_gp` versus `wgan_gp_wide`.
+
+<div align="center">
 
 ![WGAN-GP-Tuned Training](images/wgan_gp_wide/wgan_gp_wide_anim.gif)
+### Figure 1: Animation of Final WGAN 250 Epoch Training
+
+</div>
 
 ## Contents
 (optional table of contents linking to the sections below)
@@ -28,6 +34,7 @@ The chosen model is the WGAN-GP which is Normal difficulty, on HipMRI 2D slices 
 - Builds directly on course concepts involving DCGANs and WGANs (both covered in Week 9 lecture content) as well as loss/activation functions, hyperparameters and model evaluation methods.
 ### 1.3 Preliminary Feasibility Evidence
 An initial data audit was completed using `data_audit.py`, which can be summarised into this table:
+
 <div align="center">
 
 | **Measure** | **Train** | **Validate** | **Test** |
@@ -165,7 +172,7 @@ The tuned configuration changes two things relative to the standard WGAN-GP: a w
 (more capacity) and downsampled data instead of the central-cropped data. Its results are therefore evaluated 
 against equally downsampled test data and are not directly comparable with the centre-crop models.
 
-### 3.3 Reproducing Results\
+### 3.3 Reproducing Results
 **Data.**
 
 Adjust `ROOT` in `dataset.py` to match the location of your base HipMRI folder. Ensure that 
@@ -174,7 +181,9 @@ within the main HipMRI folder you direct `ROOT` to.
 
 **Commands.**
 
-Run from the project folder. `--run` selects a configuration from `CONFIGS`.
+Run from the project folder. `--run` selects a configuration from `CONFIGS`. The `CONFIGS` dictionary can be adjusted 
+for chosen hyperparameters and can take an additional entry of `resume=[checkpoint_file]` if it desired to continue
+training a previously trained model from a checkpoint.
 All outputs go to `outputs/<run>/`.
 
 | Step | Command | Output |
@@ -183,40 +192,32 @@ All outputs go to `outputs/<run>/`.
 | Train | `python train.py --run dcgan --mode train`<br>`python train.py --run wgan_gp --mode train`<br>`python train.py --run wgan_gp_wide --mode train` | `checkpoints/` (every 25 epochs), `samples/epoch_NNN.png`, loss/metric plots, `resources.txt` |
 | Validate (choose checkpoint) | `python train.py --run <run> --mode validate` | Validation FID per checkpoint, best checkpoint printed; `val_results_<run>.json` |
 | Test (final values) | `python train.py --run <run> --mode test` | Test FID (with real-data floor), inversion SSIM, nearest-neighbour statistics; `test_results.json`, `nn_hist_<run>.png` |
-| Visualise | `python predict.py --run <run>` | See **Section 3.4** |
+| Visualise | `python predict.py --run <run>` | Loads that run's saved generator weights and the test split, producing seeded image generation, interpolation, 
+ssim inversion and nearest neighbour pairs. Also prints results of `test_results.json`. |
 
 After validating, set the chosen file for each run in `BEST_CHECKPOINTS` (`utils.py`) before
 testing or running `predict.py`.
 
 **Notes on reproduction.**
 - Evaluation is seeded to ensure fair comparisons between models.
+- To visualise/generate outputs for a certain saved model, go into `utils.py` and adjust the checkpoint
+  for the chosen model inside `BEST_CHECKPOINTS`.
 - The results in this report were produced with the pre-restructure versions of these scripts
   (see redudnancy folder and commit history). New files adjusted to meet the spec requirements
   all received short test runs to ensure identical functionality.
-
-### 3.4 Example Inputs & Outputs
-`predict.py` shows example usage of a trained model. **Input:** a run name such as
-`python predict.py --run wgan_gp_wide`. It loads that run's saved generator weights
-(`BEST_CHECKPOINTS[run]`) and the test split, preprocessed the same way as in training.
-
-**Outputs** (saved to `outputs/<run>/`):
-
-
-**Printed:** the SSIM of each displayed inversion, plus the run's full test-set results from
-`test_results.json` (FID and real-data floor, inversion SSIM, nearest-neighbour statistics).
 
 ## 4. Data
 ### 4.1 Dataset & Data Audit
 The provided dataset is already split into separate training, validation and testing sets. In this case, an audit was done on the provided sets to ensure they were appropriately split with usable data (i.e. no patient leakage between sets and no near-empty/dark images) as seen in **Section 1.3**. The audit found no patient leakage between sets as well as 0 near-empty slices in the provided files, suggesting the test/train/split was valid. For this reason, there is no leakage detection/prevention functionality within `dataset.py` In addition to validating the dataset's usability for the task, the audit results were used to help determine what kind of pre-processing should be completed on the dataset.
 ### 4.2 Pre-Processing
 - **Centre Crop:** In order to avoid dropping any data from the training set, a centre crop was performed to resize the 60 outlying 256x144 images that were found during the data audit.
-[!NOTE]
-Due to a bug in `dataset.py`, a 128x64 crop was applied directly to the dataset images for the `dcgan` and `wgan_gp` runs instead of cropping to 256x144 and then downsampling. Comparison will be completed between these two models as they were trained on the same type of pre-processed data, but note that only `wgan_gp_wide` had cropping applied as described above.
+> [!NOTE]
+> Due to a bug in `dataset.py`, a 128x64 crop was applied directly to the dataset images for the `dcgan` and `wgan_gp` runs instead of cropping to 256x144 and then downsampling. Comparison will be completed between these two models as they were trained on the same type of pre-processed data, but note that only `wgan_gp_wide` had cropping applied as described above.
 - **Scaling to [-1, 1]:** Due to the end of the generator architecture using a tanh activation function, intensity values must be min-max scaled to a range of [-1, 1] to be able to pass through it.
 - **99.5th-Percentile Clipping:** The data audit revealed the training data featured intensity values up to 1,150, however, the median highest-intensity value seen in training images was only 387.5. Since the data is min-max scaled from [-1, 1], any training scans that feature outlier high-intensity values will define the top of the scaling range for that slice. This would mean that the other lower-intensity pixels would be scaled down and squashed into a narrower, darker band of intensity values. To prevent this, intensity values for images are clipped to the 99.5th percentile.
 - **Downsampling to 128x64:** The network architecture in the DCGAN/WGAN papers was designed around a 64x64, so using the full resolution image would require an additional layer in both the generator and critic networks. Additionaly, downsampling reduces the total pixel count of the images, lowering expected memory usage and training time. While the 2:1 aspect ratio is preserved, it is expected that this pre-processing decision will prevent the generator from learning some of the finer details of the data.
-[!NOTE]
-Due to a bug in `dataset.py`, only `wgan_gp_wide` has a downsample applied from 256x128 to a 128x64 image (see Center Crop note for additional details).
+> [!NOTE]
+> Due to a bug in `dataset.py`, only `wgan_gp_wide` has a downsample applied from 256x128 to a 128x64 image (see Center Crop note for additional details).
 
 ### 4.3 Splits
 **Train (91%) / Validate (5%) / Test (4%) Split**
@@ -233,7 +234,7 @@ critic iterations = 4,500 generator updates).
 
 **DCGAN (baseline)**
 
-![DCGAN losses](dcgan_results/dcgan_losses.png)
+![DCGAN Losses](images/dcgan//dcgan_losses.png)
 
 After a very unstable first 100 or so iterations, the generator loss settles around roughly 4, while the
 discriminator loss falls to around 0.2; this indicates the discriminator increasingly
@@ -244,7 +245,7 @@ is still improving.
 
 **WGAN-GP (standard)**
 
-![WGAN-GP standard training curves](wgan_results/wgan_gp_curves.png)
+![WGAN-GP standard training curves](images/wgan_gp/wgan_gp_curves.png)
 
 The gradient penalty falls from 30 to approximately 0.5 within the first few hundred critic iterations
 and stays there for the rest of training, showing the Lipschitz constraint is being enforced.
@@ -256,16 +257,20 @@ there are no further improvements in sample quality.
 
 **WGAN-GP (tuned: EMA + LR decay)**
 
-![WGAN-GP tuned training curves](wgan_ema_lr_results/wgan_gp_curves.png)
+![WGAN-GP tuned training curves](images/wgan_gp_wide/wgan_gp_wide_curves.png)
 
 Training follows the standard run closely until learning-rate decay begins at epoch 125. From then on,
 the W-estimate band and generator loss narrow noticeably compared with the standard run, consistent with smaller 
 updates reducing training variance as the learning rate approaches zero. The gradient penalty is unaffected.
 
-### 5.3 Generated Samples
+### 5.2 Generated Samples
 Uncurated grids per model; progression figure (epochs 1 / 10 / 25 / final).
-### 5.4 Tuned WGAN-GP
-What was changed, why, and what effect it had (on validation data).
+
+### 5.3 Tuned WGAN-GP
+After the first two models were trained using a cropped version of the dataset, the final version of the WGAN was
+trained using images cropped to 256x128 and then downsampled to 128x64. Additionally, the latent dimension and the generator feature 
+widith were both increased to 128, as it was believed that more dimensions and channels would allows the generator to more easily 
+separate aspects of a slice (i.e. bladder size, position, tissue) and more easily represent distinct features, respectively.
 
 ## 6. Results
 ### 6.1 Quantitative Benchmark
