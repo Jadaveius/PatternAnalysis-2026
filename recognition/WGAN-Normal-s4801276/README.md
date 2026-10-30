@@ -13,7 +13,40 @@ This project compares a DCGAN baseline model with two different WGAN-GP models. 
 </div>
 
 ## Contents
-(optional table of contents linking to the sections below)
+## Contents
+1. [Feasibility Review](#1-feasibility-review)
+   - [1.1 User Need, Scope and Acceptance Criteria](#11-user-need-scope-and-acceptance-criteria)
+   - [1.2 Model Choice and Course Concepts](#12-model-choice-and-course-concepts)
+   - [1.3 Preliminary Feasibility Evidence](#13-preliminary-feasibility-evidence)
+   - [1.4 Risk, Budget and Fallback](#14-risk-budget-and-fallback)
+2. [How It Works](#2-how-it-works)
+   - [2.1 DCGAN (Baseline)](#21-dcgan-baseline)
+   - [2.2 WGAN-GP](#22-wgan-gp)
+   - [2.3 Architecture](#23-architecture)
+3. [Usage](#3-usage)
+   - [3.1 Dependencies](#31-dependencies)
+   - [3.2 Hyperparameters](#32-hyperparameters)
+   - [3.3 Reproducing Results](#33-reproducing-results)
+4. [Data](#4-data)
+   - [4.1 Dataset & Data Audit](#41-dataset--data-audit)
+   - [4.2 Pre-Processing](#42-pre-processing)
+   - [4.3 Splits](#43-splits)
+5. [Experiments](#5-experiments)
+   - [5.1 Training Metrics](#51-training-metrics)
+   - [5.2 Generated Samples](#52-generated-samples)
+   - [5.3 Tuned WGAN-GP](#53-tuned-wgan-gp)
+6. [Results](#6-results)
+   - [6.1 Quantitative Benchmark](#61-quantitative-benchmark)
+   - [6.2 Inverse SSIM](#62-inverse-ssim)
+   - [6.3 Memorisation Audit](#63-memorisation-audit)
+   - [6.4 Latent Space Interpolation](#64-latent-space-interpolation)
+   - [6.5 Resource Profiling](#65-resource-profiling)
+7. [Failure Analysis](#7-failure-analysis)
+8. [Recommendation](#8-recommendation)
+   - [8.1 Limitations](#81-limitations)
+   - [8.2 Future Work](#82-future-work)
+9. [AI Use Disclosure](#9-ai-use-disclosure)
+10. [References](#10-references)
 
 ## 1. Feasibility Review
 **Topic 2.4 - Image Generation: Synthetic Medical Cohorts and Privacy**
@@ -28,7 +61,7 @@ The chosen model is the WGAN-GP which is Normal difficulty, on HipMRI 2D slices 
 - Must implement Earth-Mover distance. This is part of what makes it a WGAN, providing a continuous distance (differentiable almost everywhere) that allows the critic to be trained towards optimality. We can then train with low likelihood of mode collapse and image generation improving for higher number of iterations.
 - Critic must have Lipschitz constraint. Based on the paper this is the other requirement that allows the critic to have a continuous loss function to be optimised.
 - To be a WGAN-GP rather than just a WGAN, the loss function for the critic must include a gradient penalty scaled by some lambda (this penalty directly incorporates the Lipschitz constraint).
-- Starting parameters for the system are based on those noted in the WGAN-GP paper, α=0.0001,λ=10,m=64,n_CRITIC=5 where these are learning rate, gradient penalty lambda, batch size and number of critic iterations per generator iteration, respectively.
+- Starting parameters for the system are based on those noted in the WGAN-GP paper, α=0.0001,λ=10,n_CRITIC=5 where these are learning rate, gradient penalty lambda and number of critic iterations per generator iteration, respectively. Batch size is adjusted from 64 to 128.
 - Builds directly on course concepts involving DCGANs and WGANs (both covered in Week 9 lecture content) as well as loss/activation functions, hyperparameters and model evaluation methods.
 ### 1.3 Preliminary Feasibility Evidence
 An initial data audit was completed using `data_audit.py`, which can be summarised into this table:
@@ -209,7 +242,7 @@ The provided dataset is already split into separate training, validation and tes
 ### 4.2 Pre-Processing
 - **Centre Crop:** In order to avoid dropping any data from the training set, a centre crop was performed to resize the 60 outlying 256x144 images that were found during the data audit.
 > [!NOTE]
-> Due to a bug in `dataset.py`, a 128x64 crop was applied directly to the dataset images for the `dcgan` and `wgan_gp` runs instead of cropping to 256x144 and then downsampling. Comparison will be completed between these two models as they were trained on the same type of pre-processed data, but note that only `wgan_gp_wide` had cropping applied as described above.
+> Due to a bug in `dataset.py`, a 128x64 crop was applied directly to the dataset images for the `dcgan` and `wgan_gp` runs instead of cropping to 256x128 and then downsampling. Comparison will be completed between these two models as they were trained on the same type of pre-processed data, but note that only `wgan_gp_wide` had cropping applied as described above.
 - **Scaling to [-1, 1]:** Due to the end of the generator architecture using a tanh activation function, intensity values must be min-max scaled to a range of [-1, 1] to be able to pass through it.
 - **99.5th-Percentile Clipping:** The data audit revealed the training data featured intensity values up to 1,150, however, the median highest-intensity value seen in training images was only 387.5. Since the data is min-max scaled from [-1, 1], any training scans that feature outlier high-intensity values will define the top of the scaling range for that slice. This would mean that the other lower-intensity pixels would be scaled down and squashed into a narrower, darker band of intensity values. To prevent this, intensity values for images are clipped to the 99.5th percentile.
 - **Downsampling to 128x64:** The network architecture in the DCGAN/WGAN papers was designed around a 64x64, so using the full resolution image would require an additional layer in both the generator and critic networks. Additionaly, downsampling reduces the total pixel count of the images, lowering expected memory usage and training time. While the 2:1 aspect ratio is preserved, it is expected that this pre-processing decision will prevent the generator from learning some of the finer details of the data.
@@ -334,7 +367,7 @@ same way it was trained.
 | Generated / real NN ratio | 1.31 | 1.25 | 1.06 |
 | Samples closer than 99% of real test slices (expected ≈ 1% by chance) | 0.2% (1 / 540) | 0.4% (2 / 540) | 2.4% (13 / 540) |
 
-Between the two centre-crop models, DCGAN achieves a much better FID than the standard WGAN-GP (97.7 versus 191.7 above real data floor), but both achieve a very similar SSIM. This indicates that neither generator can properly represent unseen patient anatomy well. While both models were compared against test images cropped in the same way, a likely cause of the very low SSIM score is the cropping of the images. Meanwhile the tuned WGAN-GP reaches an average SSIM of 0.547, with 11.1% of slices exceeding 0.6. While this also does not meet the requirements for generated data, it is much closer in proximity to the > 0.6 requirement, with only changes in image cropping and latent space/feature size changes having been made. This suggests that there is a likely change further tuning and exploration of the WGAN-GP model could meet the requirements for generated patient images.
+Between the two centre-crop models, DCGAN achieves a much better FID than the standard WGAN-GP (97.7 versus 191.7 above real data floor), but both achieve a very similar SSIM. This indicates that neither generator can properly represent unseen patient anatomy well. While both models were compared against test images cropped in the same way, a likely cause of the very low SSIM score is the cropping of the images. Meanwhile the tuned WGAN-GP reaches an average SSIM of 0.547, with 11.1% of slices exceeding 0.6. While this also does not meet the requirements for generated data, it is much closer in proximity to the > 0.6 requirement, with only changes in image cropping and latent space/feature size changes having been made. This suggests that there is a likely chance further tuning and exploration of the WGAN-GP model could meet the requirements for generated patient images.
 
 ### 6.2 Inverse SSIM
 MRI images are too different in structure (varied anatomy) to obtain a valid SSIM score by comparing a generated image with a set of test images and returning the maximum SSIM score. Due to this, GAN inversion is used to "reconstruct" test slices. This is achieved by optimising a latent vector z so that G(z) matches the slice, and then the SSIM is computed between the slice and its reconstruction.
@@ -354,7 +387,7 @@ MRI images are too different in structure (varied anatomy) to obtain a valid SSI
 The reconstruction (test slices on top, inversions on bottom), show that all generators can recover a coards structure of bladder position, brightness levels, and primary dark/bright regions. The tuned model accurately reproduces the the body outline, background and bladder, which is a likely cause of the higher SSIM score, but the internal tissue is smoothed out and low in contrast. DCGAN's reconstructions are visibly sharper than those of the standard WGAN-GP, but the achieved SSIM is similar, suggesting that DCGAN may face more misalignments in texture despite being sharper in appearance.
 
 ### 6.3 Memorisation Audit
-The memorisation images below show the 8 generated samples (bottom row) from each model that were closest to images in the training set (top row), illustrating the worst cases of memorisation discovered.
+The memorisation images below show the 8 generated samples (top row) from each model that were closest to images in the training set (bottom row), illustrating the worst cases of memorisation discovered.
 
 <div align="center">
 
@@ -379,7 +412,7 @@ The tuned model has the highest percentage of samples below the memorisation thr
 
 </div>
 
-The generated distribution overlaps the real distribution but is centred slightly to the right of it, suggesting that generated images are actually slightly less like any real slice. There are still very few images are to the left of the percentile line marker, and they are only more similar to train images by a small margin (roughly 0.13 lowest generator RMSE versus rouhgly 0.27). Moreover, the generated images actually have more images farther right than the test images, so it is likely that the increased similarites occured due to very similar global anatomy, rather than due to any direction training memorisation.
+The generated distribution overlaps the real distribution but is centred slightly to the right of it, suggesting that generated images are actually slightly less like any real slice. There are still very few images are to the left of the percentile line marker, and they are only more similar to train images by a small margin. Moreover, the generated images actually have more images farther right than the test images, so it is likely that the increased similarites occured due to very similar global anatomy, rather than due to any direction training memorisation.
 
 ### 6.4 Latent Space Interpolation
 
@@ -418,7 +451,7 @@ All 3 images show smooth changes from one side to the other, indicating that the
 Per-epoch, each generator takes relatively the same amount of time, however due to the fact that the WGAN-GP generator only updates for every 5 critic runs, it must run a significantly larger number of epochs to achieve the same amount of generator iterations. There is a clear increased in peak VRAM across the 3, as the gradient penalty's second backward pass in WGAN-GP requires more memory than the single BCELoss in the DCGAN. Tuned WGAN-GP sees another (anticipated) increase as it adds additional features and latent space to the generator. Overall all models fall far below the expected maximum allowable memory and time from the feasibility report (4GB VRAM and 6h training).
 
 ## 7. Failure Analysis
-**Observation:** Centre-crop samples contain realistic elements (bladder-like shapes, tissue boundaries) but arrange them without anatomical coherence. There is no left-right symmetry or consistent orange layout and some sample are almost all texture (see Section 5.3 DCGAN/Standard WGAN-GP for images).
+**Observation:** Centre-crop samples contain realistic elements (bladder-like shapes, tissue boundaries) but arrange them without anatomical coherence. There is no left-right symmetry or consistent organ layout and some sample are almost all texture (see Section 5.3 DCGAN/Standard WGAN-GP for images).
 **Diagnosis:** The central 128x64 image crop removes landmarks that anchor the pelvis layout such as the body outline and fermoral heads. Low inversion SSIM (approximately 0.37) in both confirms they cannot accurately represent unseen anatomy.
 **Evidence of Cause:** The tuned model with whole slices better reproduces the global layout and raises inversion SSIM to 0.55 (although increase in generator features may also be a contributor).
 
