@@ -6,7 +6,7 @@ BASED ON RESULTS OF REPORT (like exec summary). **Please review** the two notes 
 **4.2 Pre-Processing** section to understand the difference in displayed results for
 `dcgan` and `wgan_gp` versus `wgan_gp_wide`.
 
-![Uncurated WGAN-GP samples](images/wgan_gp_final.png)
+![WGAN-GP-Tuned Training](images/wgan_gp_wide/wgan_gp_wide_anim.gif)
 
 ## Contents
 (optional table of contents linking to the sections below)
@@ -165,12 +165,16 @@ The tuned configuration changes two things relative to the standard WGAN-GP: a w
 (more capacity) and downsampled data instead of the central-cropped data. Its results are therefore evaluated 
 against equally downsampled test data and are not directly comparable with the centre-crop models.
 
-### 3.3 Reproducing Results
-**Data.** Adjust `ROOT` in `dataset.py` to match the location of your base HipMRI folder. Ensure that 
+### 3.3 Reproducing Results\
+**Data.**
+
+Adjust `ROOT` in `dataset.py` to match the location of your base HipMRI folder. Ensure that 
 `HipMRI/keras_slices_train`, `HipMRI/keras_slices_validate` and `HipMRI/keras_slices_test` all exist 
 within the main HipMRI folder you direct `ROOT` to.
 
-**Commands.** Run from the project folder. `--run` selects a configuration from `CONFIGS`.
+**Commands.**
+
+Run from the project folder. `--run` selects a configuration from `CONFIGS`.
 All outputs go to `outputs/<run>/`.
 
 | Step | Command | Output |
@@ -217,14 +221,11 @@ Due to a bug in `dataset.py`, only `wgan_gp_wide` has a downsample applied from 
 ### 4.3 Splits
 **Train (91%) / Validate (5%) / Test (4%) Split**
 - **Train:** For fitting the generator and critic (learning the weights).
-- **Validate:** FID and SSIM verification is done against saved checkpoints for each model to find the best performing checkpoint (which will be used for final evaluation).
+- **Validate:** FID verification is done against saved checkpoints for each model to find the best performing checkpoint (which will be used for final evaluation).
 - **Test:** Used with the final model, checking SSIM, FID and memorisation audit (nearest neighbours) acceptance criteria are met.
 
 ## 5. Experiments
-### 5.1 Training Setup
-Hyperparameter table for all three models; hardware; epochs and number of
-generator updates.
-### 5.2 Training Dynamics
+### 5.1 Training Metrics
 All three models received 4,500 generator updates. Note that the x-axes differ: the DCGAN
 plot is in generator iterations (one discriminator update per generator update), while the
 WGAN-GP plots are in critic iterations (five critic updates per generator update, so 22,500
