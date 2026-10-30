@@ -1,11 +1,11 @@
 import torch
 import json
+import argparse
 from pathlib import Path
-from utils import load_generator, compute_fid, nearest_train, to_rgb_01, invert_ssim
-from utils import NUM_SAMPLES, BEST_CHECKPOINTS
-from train import setup_out_dir
+from utils import load_generator, nearest_train, invert_ssim
+from utils import BEST_CHECKPOINTS
+from train import setup_out_dir, CONFIGS
 from dataset import load_split
-from torchmetrics.image.fid import FrechetInceptionDistance
 import torchvision.utils as vutils
 
 BASE = Path(__file__).resolve().parent
@@ -83,5 +83,10 @@ def generate_results(cfg, name):
         print(f"No test results yet, run: python train.py --run {name} --mode test")
 
 
-#if __name__ == "__main__":
-    # Do smthg
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Generate samples and visualisations from" \
+    "a trained model.")
+    parser.add_argument("--run", required=True, choices=BEST_CHECKPOINTS.keys())
+
+    args = parser.parse_args()
+    generate_results(CONFIGS[args.run], args.run)
