@@ -7,6 +7,8 @@ import torch
 from modules import Generator
 from torchmetrics.functional.image import structural_similarity_index_measure as ssim
 
+NUM_SAMPLES = 256
+
 def load_generator(path, device, nz, ngf):
     """
     Loads the generator data from a saved model.

@@ -425,10 +425,10 @@ def validate(cfg, name):
     fid_results = {}
 
     # For each checkpoint in the folder, validate
-    checkpoint_path = os.path.join(out_dir, "checkpoints")
+    checkpoint_path = out_dir / "checkpoints"
     # Go through them in order
     for file_path in sorted(checkpoint_path.glob("*.pt")):
-        netG = load_generator(file_path, nz=cfg["nz"], ngf=cfg["ngf"])
+        netG = load_generator(file_path, device, nz=cfg["nz"], ngf=cfg["ngf"])
         torch.manual_seed(0) # Same noise for all checkpoints
         
         with torch.no_grad():
@@ -443,19 +443,28 @@ def validate(cfg, name):
     with open(BASE / "outputs" / f"val_results_{name}.json", "w") as f:
         json.dump({"fid": fid_results}, f, indent=2)
 
+    return best_model_fid, fid_results
+
 if __name__ == "__main__":
     # For ease of running/reproduction add main that allows running from the command line
-    parser = argparse.ArgumentParser(description="Train DCGAN or WGAN-GP" \
-    "on HipMRI 2D slices.")
+    parser = argparse.ArgumentParser(description="Train DCGAN or WGAN-GP on HipMRI 2D slices.")
 
-    parser.add_argument("--run", required=True, choices=CONFIGS.keys(),
-                        help="Which configuration from configs to train.")
+    parser.add_argument("--run", choices=CONFIGS.keys(),
+                     help="Which configuration from configs to train.")
+    parser.add_argument("--mode", default="train", choices=["train", "validate", "test"])
     args = parser.parse_args()
 
-    cfg = CONFIGS[args.run]
-    # Can run DCGAN or the different versions of WGAN
-    if cfg["model"] == "wgan_gp":
-        train_wgan_gp(cfg, args.run)
+    if args.mode in ("train", "validate") and args.run is None:
+        parser.error("--run is required for train and validate modes")
 
-    elif cfg["model"] == "dcgan":
-        train_dcgan(cfg, args.eun)
+    # Can run DCGAN or the different versions of WGAN
+    if args.mode == "train":
+        cfg = CONFIGS[args.run]
+        if cfg["model"] == "wgan_gp":
+            train_wgan_gp(cfg, args.run)
+
+        elif cfg["model"] == "dcgan":
+            train_dcgan(cfg, args.run)
+    # Can choose to validate existing training
+    elif args.mode == "validate":
+        validate(CONFIGS[args.run], args.run)
