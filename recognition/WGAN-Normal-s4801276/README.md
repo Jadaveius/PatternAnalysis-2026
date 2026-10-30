@@ -98,7 +98,10 @@ Sigmoid to output a probability; the WGAN-GP critic outputs an unbounded score.
 ## 3. Usage
 ### 3.1 Dependencies
 All code was run with **Python 3.13** on Windows 11 with an **NVIDIA GeForce RTX 3080** (CUDA 13.1).
+
 Third-party packages:
+
+<div align="center">
 
 | Package | Version | Used by |
 |---|---|---|
@@ -110,6 +113,8 @@ Third-party packages:
 | nibabel | 5.4.2 | `dataset.py`, `data_audit.py` (loading NIfTI slices) |
 | numpy | 2.5.2 | `dataset.py`, `data_audit.py` (preprocessing / audit only) |
 | matplotlib | 3.11.2 | `train.py` (loss, metric and histogram plots) |
+
+</div>
 
 Imports per file (standard-library modules in *italics*):
 
@@ -161,8 +166,7 @@ against equally downsampled test data and are not directly comparable with the c
 ### 3.3 Reproducing Results
 **Data.** Adjust `ROOT` in `dataset.py` to match the location of your base HipMRI folder. Ensure that 
 `HipMRI/keras_slices_train`, `HipMRI/keras_slices_validate` and `HipMRI/keras_slices_test` all exist 
-within the main HipMRI folder you direct `ROOT` to. The provided
-patient-level splits are used unchanged (verified leakage-free by `data_audit.py`).
+within the main HipMRI folder you direct `ROOT` to.
 
 **Commands.** Run from the project folder. `--run` selects a configuration from `CONFIGS`.
 All outputs go to `outputs/<run>/`.
@@ -173,7 +177,7 @@ All outputs go to `outputs/<run>/`.
 | Train | `python train.py --run dcgan --mode train`<br>`python train.py --run wgan_gp --mode train`<br>`python train.py --run wgan_gp_wide --mode train` | `checkpoints/` (every 25 epochs), `samples/epoch_NNN.png`, loss/metric plots, `resources.txt` |
 | Validate (choose checkpoint) | `python train.py --run <run> --mode validate` | Validation FID per checkpoint, best checkpoint printed; `val_results_<run>.json` |
 | Test (final values) | `python train.py --run <run> --mode test` | Test FID (with real-data floor), inversion SSIM, nearest-neighbour statistics; `test_results.json`, `nn_hist_<run>.png` |
-| Visualise | `python predict.py --run <run>` | See Section 3.4 |
+| Visualise | `python predict.py --run <run>` | See **Section 3.4** |
 
 After validating, set the chosen file for each run in `BEST_CHECKPOINTS` (`utils.py`) before
 testing or running `predict.py`.
@@ -197,7 +201,7 @@ testing or running `predict.py`.
 
 ## 4. Data
 ### 4.1 Dataset & Data Audit
-The provided dataset is already split into separate training, validation and testing sets. In this case, an audit was done on the provided sets to ensure they were appropriately split with usable data (i.e. no patient leakage between sets and no near-empty/dark images) as seen in **Section 1.3**. The audit found no patient leakage between sets as well as 0 near-empty slices in the provided files, suggesting the test/train/split was valid. In addition to validating the dataset's usability for the task, the audit results were used to help determine what kind of pre-processing should be completed on the dataset.
+The provided dataset is already split into separate training, validation and testing sets. In this case, an audit was done on the provided sets to ensure they were appropriately split with usable data (i.e. no patient leakage between sets and no near-empty/dark images) as seen in **Section 1.3**. The audit found no patient leakage between sets as well as 0 near-empty slices in the provided files, suggesting the test/train/split was valid. For this reason, there is no leakage detection/prevention functionality within `dataset.py` In addition to validating the dataset's usability for the task, the audit results were used to help determine what kind of pre-processing should be completed on the dataset.
 ### 4.2 Pre-processing
 - **Centre Crop:** In order to avoid dropping any data from the training set, a centre crop was performed to resize the 60 outlying 256x144 images that were found during the data audit.
 - **Scaling to [-1, 1]:** Due to the end of the generator architecture using a tanh activation function, intensity values must be min-max scaled to a range of [-1, 1] to be able to pass through it.
