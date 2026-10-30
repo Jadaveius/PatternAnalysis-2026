@@ -384,8 +384,21 @@ The tuned model has the highest percentage of samples below the memorisation thr
 The generated distribution overlaps the real distribution but is centred slightly to the right of it, suggesting that generated images are actually slightly less like any real slice. There are still very few images are to the left of the percentile line marker, and they are only more similar to train images by a small margin (roughly 0.13 lowest generator RMSE versus rouhgly 0.27). Moreover, the generated images actually have more images farther right than the test images, so it is likely that the increased similarites occured due to very similar global anatomy, rather than due to any direction training memorisation.
 
 ### 6.4 Latent Space Interpolation
-Interpolation strip between two latent vectors; smoothness and anatomical
-plausibility.
+
+<div align="center">
+
+![DCGAN Interp](images/dcgan/interpolation_dcgan.png)
+
+
+![Standard WGAN-GP Interp](images/wgan_gp/interpolation_wgan_gp.png)
+
+![Tuned WGAN-GP Interp](images/wgan_gp_wide/interpolation_wgan_gp_wide.png)
+### Figure 11: DCGAN (Top) Standard-WGAN (Middle) Tuned WGAN-GP (Bottom) Interpolations
+
+</div>
+
+All 3 images show smooth changes from one side to the other, indicating that the generator in all cases has managed to learn a continuous latent space rather than memorising individual training slices. No frames degrade into noise or artefacts midway though interpolation, and can be considered "plausible" transitions within the limitations of each model (i.e. ignoring the overall anatomical quality/correctness of the images).
+
 ### 6.5 Resource Profiling
 Table: parameters, peak VRAM, time per epoch, time per generator update,
 generation latency, GPU.
