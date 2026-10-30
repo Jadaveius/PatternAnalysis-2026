@@ -18,7 +18,13 @@ ORIGINAL_W = 128
 
 PERCENTILE = 99.5 # Clipping outlier pixels
 
+# Data audit confirms that there is no patient leakage and test/train/split
+# is valid so it is not part of dataset pre-processing
 class HipMRIDataset(Dataset):
+    """
+    Class that manages the main dataset for this project. Completes all pre-processing
+    and allows for DataLoader to be called on a class object in training.
+    """
     def __init__(self, dir=ROOT, seg="train", downsample=False):
         # Path to files
         path = os.path.join(dir, f"keras_slices_{seg}", "*.nii.gz")
