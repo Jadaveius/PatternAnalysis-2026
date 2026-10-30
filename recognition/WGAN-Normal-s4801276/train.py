@@ -6,7 +6,10 @@ and moved into the correct format.
 
 import os
 import torch
+from pathlib import Path
 import torchvision.utils as vutils
+
+BASE = Path(__file__).resolve().parent
 
 # Configurations of the different models that have been tested in this project
 CONFIGS = {
@@ -19,6 +22,18 @@ CONFIGS = {
     "wgan_gp_wide": dict(model="wgan_gp_wide", epochs=1000, lr=0.0001, betas=(0.0, 0.9), nc=1, nz=128,
                       ngf=128, ndf=64, downsample=True)
 }
+
+
+def setup_out_dir(name):
+    """
+    Set up the output directory for results of this model training.
+    """
+    out_dir = BASE / "outputs" / name
+    
+    os.makedirs(os.path.join(out_dir, "samples"), exist_ok=True)
+    os.makedirs(os.path.join(out_dir, "checkpoints"), exist_ok=True)
+
+    return out_dir
 
 def save_sample_grid(netG, noise, out_dir, epoch):
     """
