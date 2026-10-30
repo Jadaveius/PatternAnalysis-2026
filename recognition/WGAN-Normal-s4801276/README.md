@@ -348,7 +348,7 @@ MRI images are too different in structure (varied anatomy) to obtain a valid SSI
 
 ![Standard WGAN-GP Inversion](images/wgan_gp/inversion_wgan_gp.png)
 
-![DCGAN Inversion](images/wgan_gp_wide/inversion_wgan_gp_wide.png)
+![Tuned WGAN-GP Inversion](images/wgan_gp_wide/inversion_wgan_gp_wide.png)
 ### Figure 8: DCGAN (Top) Standard-WGAN (Middle) Tuned WGAN-GP (Bottom) Inversion
 
 </div>
@@ -356,8 +356,33 @@ MRI images are too different in structure (varied anatomy) to obtain a valid SSI
 The reconstruction (test slices on top, inversions on bottom), show that all generators can recover a coards structure of bladder position, brightness levels, and primary dark/bright regions. The tuned model accurately reproduces the the body outline, background and bladder, which is a likely cause of the higher SSIM score, but the internal tissue is smoothed out and low in contrast. DCGAN's reconstructions are visibly sharper than those of the standard WGAN-GP, but the achieved SSIM is similar, suggesting that DCGAN may face more misalignments in texture despite being sharper in appearance.
 
 ### 6.3 Memorisation Audit
-Nearest-neighbour distances (generated→train vs test→train), example
-nearest-neighbour pairs.
+The memorisation images below show the 8 generated samples (bottom row) from each model that were closest to images in the training set (top row), illustrating the worst cases of memorisation discovered.
+
+<div align="center">
+
+![DCGAN NN](images/dcgan/nn_pairs_DCGAN.png)
+
+
+![Standard WGAN-GP NN](images/wgan_gp/nn_pairs_wgan_gp.png)
+
+![Tuned WGAN-GP NN](images/wgan_gp_wide/nn_pairs_wgan_gp_wide.png)
+### Figure 9: DCGAN (Top) Standard-WGAN (Middle) Tuned WGAN-GP (Bottom) NN Slices
+
+</div>
+
+In all 3 cases, matches appear to come from the dominant shape being similar, rather than because the internal anatomy of the patients is directly copied. More specifically, each image features a large, bright bladder in the same position, making it dominating feature across the image. Thus, "similar" generated/real pairs are those where the generated bladder happens to be large, rather than due to copied anatomy across the whole image (i.e. generated tissue, muscles and bones differ).
+
+The tuned model has the highest percentage of samples below the memorisation threshold (2.4%, when the expected would be 1% with random chance). To properly analyse why this may be, we can take a look at the histogram produced by the `test` function in `train.py`. The histogram compares 540 real test slices to 540 generated images, and for each generated image it finds the most similar training slice and measures how different they are with average pixel difference. A small number is located on the left-hand side, and indicates that an image is very similar to a training slice, while the right-hand side means they are less similar.
+
+<div align="center">
+
+![Tuned WGAN-GP NN Histogram](images/wgan_gp_wide/nn_hist_wgan_gp_wide.png)
+### Figure 10: Tuned WGAN-GP NN Histogram
+
+</div>
+
+The generated distribution overlaps the real distribution but is centred slightly to the right of it, suggesting that generated images are actually slightly less like any real slice. There are still very few images are to the left of the percentile line marker, and they are only more similar to train images by a small margin (roughly 0.13 lowest generator RMSE versus rouhgly 0.27). Moreover, the generated images actually have more images farther right than the test images, so it is likely that the increased similarites occured due to very similar global anatomy, rather than due to any direction training memorisation.
+
 ### 6.4 Latent Space Interpolation
 Interpolation strip between two latent vectors; smoothness and anatomical
 plausibility.
