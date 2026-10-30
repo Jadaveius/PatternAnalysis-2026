@@ -9,6 +9,11 @@ from torchmetrics.functional.image import structural_similarity_index_measure as
 
 NUM_SAMPLES = 256
 
+BEST_CHECKPOINTS = {"dcgan": "dcgan_epoch_050.pt",
+        "wgan_gp": "wgan_gp_epoch_240.pt",
+        "wgan_gp_wide": "wgan_gp_epoch_250.pt",
+}
+
 def load_generator(path, device, nz, ngf):
     """
     Loads the generator data from a saved model.
