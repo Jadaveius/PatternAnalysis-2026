@@ -77,13 +77,13 @@ def generate_results(cfg, name):
     print(f"Mean over these 8: {inv_scores.mean():.3f}")
 
     vutils.save_image(torch.cat([ref[pick], recon]),
-                        BASE / "outputs" / f"inversion_{name}.png",
+                        out_dir / f"inversion_{name}.png",
                         nrow=8, padding=2, normalize=True, value_range=(-1, 1))
 
     gen_d, gen_idx = nearest_train(gen, train_flat)
     order = gen_d.argsort()[:8]
     vutils.save_image(torch.cat([gen[order], train[gen_idx[order]]]),
-                        BASE / "outputs" / f"nn_pairs_{name}.png",
+                        out_dir / f"nn_pairs_{name}.png",
                         nrow=8, padding=2, normalize=True, value_range=(-1, 1))
 
     # Print out results from the previous test
