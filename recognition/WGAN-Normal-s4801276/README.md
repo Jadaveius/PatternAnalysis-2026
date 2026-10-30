@@ -281,6 +281,8 @@ All grids below are uncurated, and display the first 32 samples produced from ra
 
 </div>
 
+The DCGAN image generations appear to have relatively sharp and clean boundaries, with nice contrasting edges between bright/dark areas. Additionally, the bladders are smooth, with similarity in shape and brightness to the real images. However, the global anatomical layout is lacking, with no consistent arrangement of organs and little symmetry between the left and right sides of the pelvis. Some images appear to be mostly texture (row 2, column 1-3) with no distinct layout at all.
+
 <div align="center">
 
 | Real Test Slices (Centre Crop) | WGAN Standard |
@@ -290,14 +292,18 @@ All grids below are uncurated, and display the first 32 samples produced from ra
 
 </div>
 
+The standard WGAN-GP is able to reproduce global intensity and contrast, and places a bright bladder-like structure to the right in approximately half of its samples. However, it is not able to reproduce anatomical structure, as the bladder boundaries are irregular and surrounding tissue can have swirling patterns instead of distinct muscles/organs. Some samples contain no recognisable structure, but all samples vary noticably in layout with no obviously similar compositions. Compared to the DCGAN, this generator produces blurrier, streaky edges and a more irregular bladder appearance, suggesting that the baseline model has outperformed the standard WGAN-GP implementation.
+
 <div align="center">
 
 | Real Test Slices (Downsampled) | WGAN-GP (Tuned) |
 |---|---|
-| ![Real Seeded Images](images/wgan_gp/grid_real_test.png) | ![WGAN-GP Tuned Seed 1](images/wgan_gp_wide/grid_wgan_gp_wide_seed1.png) |
+| ![Real Full Seeded Images](images/wgan_gp_wide/grid_real_test.png) | ![WGAN-GP Tuned Seed 1](images/wgan_gp_wide/grid_wgan_gp_wide_seed1.png) |
 ### Figure 7: Real Images vs Generated Tuned WGAN_GP Images
 
 </div>
+
+The global layout of the generated samples are improved in the tuned WGAN-GP, with roughly the right body width, and a bladder centred in the pelvis, which is a direct improvement when compared to the other two models. Additionally, the layouts are diverse, with relatively plausible bladders that vary in brightness and size. There are still some aspects missing, including a need for clearer structure (tissue between the outline and the bladder is streaky) and a lack of contrast and sharpness (some images appear fuzzy).
 
 
 ### 5.3 Tuned WGAN-GP
@@ -308,8 +314,28 @@ separate aspects of a slice (i.e. bladder size, position, tissue) and more easil
 
 ## 6. Results
 ### 6.1 Quantitative Benchmark
-Table: DCGAN | WGAN-GP (paper defaults) | WGAN-GP (tuned): SSIM vs test,
-FID/KID, diversity metric; pass/fail against SSIM > 0.6.
+All metrics are computed on the held-out test split (540 slices, 3 patients) using each run's
+checkpoint selected by lowest validation FID. 540 samples are generated per model with the same
+latent noise (seed 0). Each model is evaluated against test and training data preprocessed the
+same way it was trained.
+
+| Metric | DCGAN | WGAN-GP (standard) | WGAN-GP (tuned) |
+|---|:---:|:---:|:---:|
+| Data | Centre crop | Centre crop | Whole slice, downsampled |
+| Checkpoint (generator updates) | Epoch 50 (4,500) | Epoch 240 (4,320) | Epoch 250 (4,500) |
+| **Fidelity** | | | |
+| FID ↓ | **177.5** | 271.4 | 204.0 |
+| Real-data FID floor | 79.8 | 79.8 | 70.4 |
+| FID above floor ↓ | **97.7** | 191.7 | 133.6 |
+| Inversion SSIM ↑ (mean ± std) | 0.374 ± 0.072 | 0.364 ± 0.078 | **0.547 ± 0.037** |
+| Test slices with inversion SSIM > 0.6 | 0% (0 / 540) | 0% (0 / 540) | **11.1% (60 / 540)** |
+| Meets SSIM > 0.6 target (mean) | ✗ | ✗ | ✗ |
+| **Memorisation audit** | | | |
+| Median NN RMSE to training set (generated) | 0.467 | 0.445 | 0.333 |
+| Median NN RMSE to training set (real test) | 0.356 | 0.356 | 0.315 |
+| Generated / real NN ratio | 1.31 | 1.25 | 1.06 |
+| Samples closer than 99% of real test slices (expected ≈ 1% by chance) | 0.2% (1 / 540) | 0.4% (2 / 540) | 2.4% (13 / 540) |
+
 ### 6.2 Memorisation Audit
 Nearest-neighbour distances (generated→train vs test→train), example
 nearest-neighbour pairs.
