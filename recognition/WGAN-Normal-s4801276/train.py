@@ -16,7 +16,8 @@ from modules import Generator, Discriminator, Critic, weights_init
 from pathlib import Path
 import torchvision.utils as vutils
 import matplotlib.pyplot as plt
-from utils import load_generator, compute_fid, to_rgb_01, NUM_SAMPLES
+from utils import load_generator, compute_fid, nearest_train, to_rgb_01, invert_ssim
+from utils import NUM_SAMPLES, BEST_CHECKPOINTS
 from torchmetrics.image.fid import FrechetInceptionDistance
 
 BASE = Path(__file__).resolve().parent
@@ -444,6 +445,86 @@ def validate(cfg, name):
         json.dump({"fid": fid_results}, f, indent=2)
 
     return best_model_fid, fid_results
+
+def test(cfg, name):
+    """
+    Will test the best checkpoint for a model (BEST_CHECKPOINTS from utils.py,
+    should be validated with validate()) for ssim, fid, nn audit. Prints results,
+    saves results to json, and plots NN histogram metric.
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    out_dir = setup_out_dir(name)
+
+    train = load_split("train", downsample=cfg["downsample"]).to(device)
+    train_flat = train.flatten(1)
+    ref = load_split("test", downsample=cfg["downsample"]).to(device)
+
+    # Get FID for real test slices once
+    fid = FrechetInceptionDistance(feature=2048, normalize=True,
+                                            reset_real_features=False).to(device)
+    for s in range(0, ref.size(0), 100):
+        fid.update(to_rgb_01(ref[s:s + 100]), real=True)
+
+    # Get baseline references for NN and FID from real data
+    torch.manual_seed(0)
+    idx = torch.randperm(train.size(0))[:ref.size(0)]
+    fid_floor = compute_fid(fid, train[idx])
+    test_d, _ = nearest_train(ref, train_flat)
+    mem_threshold = torch.quantile(test_d, 0.01)
+
+    test_results = {}      
+    netG = load_generator(out_dir / "checkpoints" / BEST_CHECKPOINTS[name],
+                          device=device, nz=cfg["nz"], ngf=cfg["ngf"])
+
+    # Same noise as validity testing
+    torch.manual_seed(0)
+    with torch.no_grad():
+        # Want to generate for size of test set
+        gen = netG(torch.randn(ref.size(0), cfg["nz"], 1, 1, device=device))
+
+    fid_score = compute_fid(fid, gen)
+    print(f"{name}: FID {fid_score:.2f} (real-data floor {fid_floor:.2f})")
+
+    # Save results in dict for log/ease of find later
+    test_results[name] = {"checkpoint": BEST_CHECKPOINTS[name], "fid": fid_score,
+                          "fid_real_floor": fid_floor,
+                          "data": "downsampled" if cfg["downsample"] else "centre crop"}
+
+    # GAN-inversion SSIM: paired reconstruction of each unseen test slice (target > 0.6)
+    _, inv_scores = invert_ssim(netG, ref, nz=cfg["nz"])
+    test_results[name].update({"inv_ssim_mean": inv_scores.mean().item(),
+                                "inv_ssim_std": inv_scores.std().item(),
+                                "inv_frac_above_0.6": (inv_scores > 0.6).float().mean().item()})
+    
+    print(f"{name}: inversion SSIM {inv_scores.mean():.4f} ± {inv_scores.std():.4f} "
+            f"({(inv_scores > 0.6).float().mean():.1%} of slices > 0.6)")
+
+    # Nearest-neighbour memorisation audit
+    gen_d, _ = nearest_train(gen, train_flat)
+    frac_close = (gen_d < mem_threshold).float().mean().item()
+    test_results[name].update({"nn_gen_median": gen_d.median().item(),
+                                "nn_test_median": test_d.median().item(),
+                                "nn_frac_below_test_p1": frac_close})
+    
+    print(f"{name}: NN RMSE median gen {gen_d.median():.3f} vs test {test_d.median():.3f} | "
+            f"{frac_close:.1%} closer than 99% of real test slices")
+
+    plt.figure(figsize=(7, 4))
+    plt.hist(test_d.cpu(), bins=40, alpha=0.6, density=True, label="Real test → train")
+    plt.hist(gen_d.cpu(), bins=40, alpha=0.6, density=True, label=f"{name} → train")
+
+    plt.axvline(mem_threshold.item(), color="k", ls="--", label="Test 1st percentile")
+    plt.xlabel("RMSE to nearest training slice")
+    plt.ylabel("Density")
+
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(out_dir / f"nn_hist_{name}.png", dpi=150)
+    plt.close()
+
+    # Save results from model evaluation
+    with open(out_dir / "test_results.json", "w") as f:
+        json.dump(test_results, f, indent=2)
 
 if __name__ == "__main__":
     # For ease of running/reproduction add main that allows running from the command line
