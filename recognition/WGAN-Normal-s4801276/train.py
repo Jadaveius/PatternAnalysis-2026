@@ -134,3 +134,23 @@ def plot_wgan_curves(out_dir, g_losses, c_losses, W, GP, n_critic):
     plt.tight_layout()
     plt.savefig(os.path.join(out_dir, "wgan_gp_curves.png"), dpi=150)
     plt.close()
+
+def save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_times,
+                   num_epochs, gen_ms):
+    """
+    Saves a file containing information on the resources used by the run
+    including GPU, peak VRAM, mean epoch time, total training time,
+    and image generation speed.
+    """
+
+    summary = (f"Device: {gpu_name}\n"
+                    f"G params: {n_params_G:,} | D params: {n_params_D:,}\n"
+                    f"Peak VRAM: {peak_vram:.0f} MB\n"
+                    f"Mean epoch time: {sum(epoch_times) / len(epoch_times):.1f} s "
+                    f"(total {sum(epoch_times) / 60:.1f} min for {num_epochs} epochs)\n"
+                    f"Generate 64 images: {gen_ms:.1f} ms")
+    print(summary)
+
+    # Save text summary for later
+    with open(os.path.join(out_dir, "resources.txt"), "w") as f:
+        f.write(summary)
