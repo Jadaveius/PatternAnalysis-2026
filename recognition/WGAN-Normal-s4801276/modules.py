@@ -3,6 +3,7 @@ Model components including Generator (for DCGAN and WGAN), Discriminator (for DC
 and Critic (for WGAN) with helper weights_init() function to be used for
 synthetic HipMRI 2D slice generation.
 """
+
 import torch.nn as nn
 from torch.nn import Module
 

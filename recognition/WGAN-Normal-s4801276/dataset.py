@@ -1,3 +1,9 @@
+"""
+For loading and pre-processing of the HipMRI 2D slices dataset. HipMRIDataset object
+should be initialised for the required test/train/split set and can then be placed
+into Dataloader for Pytorch DCGAN and WGAN training/validating/evaluating.
+"""
+
 import os
 import glob
 import torch
