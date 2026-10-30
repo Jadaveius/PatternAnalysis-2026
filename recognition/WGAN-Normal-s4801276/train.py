@@ -7,6 +7,7 @@ and moved into the correct format.
 import os
 import time
 import torch
+import argparse
 import torch.nn as nn
 import torch.optim as optim
 from dataset import load_data
@@ -173,7 +174,7 @@ def gradient_penalty(critic, real, fake):
     grad = torch.autograd.grad(critic(x_hat).sum(), x_hat, create_graph=True)[0]
     return ((grad.flatten(1).norm(2, dim=1) - 1) ** 2).mean()
 
-def train_wgan(cfg, name):
+def train_wgan_gp(cfg, name):
     """
     For training the WGAN model. Runs can be done fresh or be resumed from
     a checkpoint
@@ -216,7 +217,7 @@ def train_wgan(cfg, name):
     gpu_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"
     n_params_G = sum(p.numel() for p in netG.parameters())
     n_params_D = sum(p.numel() for p in netD.parameters())
-    
+
     if device.type == "cuda":
         torch.cuda.reset_peak_memory_stats()
 
@@ -277,3 +278,16 @@ def train_wgan(cfg, name):
     save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_times, gen_ms)
     plot_wgan_curves(out_dir, G_losses, D_losses, W_estimates, GP_values, N_CRITIC)
     return netG, netD
+
+if __name__ == "__main__":
+    # For ease of running/reproduction add main that allows running from the command line
+    parser = argparse.ArgumentParser(description="Train DCGAN or WGAN-GP" \
+    "on HipMRI 2D slices.")
+
+    parser.add_argument("--run", required=True, choices=CONFIGS.keys(),
+                        help="Which configuration from configs to train.")
+    args = parser.parse_args()
+
+    cfg = CONFIGS[args.run]
+    if cfg["model"] == "wgan_gp":
+        train_wgan_gp(cfg, args.run)
