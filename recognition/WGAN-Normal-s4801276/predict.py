@@ -25,6 +25,19 @@ def get_sample_grids(name, generator, device, nz, out_dir):
                                   nrow=8, padding=2, normalize=True, value_range=(-1, 1))
 
 
+def latent_interpolation(generator, device, nz, out_path, steps=10, seed=0):
+    """
+    Generate images along a straight line between two random latent vectors.
+    """
+    g = torch.Generator().manual_seed(seed)
+    z0, z1 = torch.randn(2, nz, 1, 1, generator=g).to(device)
+    alphas = torch.linspace(0, 1, steps, device=device).view(-1, 1, 1, 1)
+
+    with torch.no_grad():
+        imgs = generator((1 - alphas) * z0 + alphas * z1)
+
+    vutils.save_image(imgs, out_path, nrow=steps, padding=2, normalize=True, value_range=(-1, 1))
+
 def generate_results(cfg, name):
     """
     Generate results and visualisations for saved models based on checkpoint entry
@@ -53,6 +66,7 @@ def generate_results(cfg, name):
         gen = netG(torch.randn(ref.size(0), cfg["nz"], 1, 1, device=device))
     
     get_sample_grids(name, netG, device, cfg["nz"], out_dir)
+    latent_interpolation(netG, device, cfg["nz"], out_dir / f"interpolation_{name}.png")
 
     # Figure: test slices (top) vs their reconstructions (bottom)
     pick = torch.arange(0, ref.size(0), ref.size(0) // 8)[:8]
