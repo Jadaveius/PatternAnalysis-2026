@@ -13,7 +13,6 @@ This project compares a DCGAN baseline model with two different WGAN-GP models. 
 </div>
 
 ## Contents
-## Contents
 1. [Feasibility Review](#1-feasibility-review)
    - [1.1 User Need, Scope and Acceptance Criteria](#11-user-need-scope-and-acceptance-criteria)
    - [1.2 Model Choice and Course Concepts](#12-model-choice-and-course-concepts)
