@@ -9,6 +9,7 @@ import time
 import torch
 from pathlib import Path
 import torchvision.utils as vutils
+import matplotlib.pyplot as plt
 
 BASE = Path(__file__).resolve().parent
 
@@ -86,3 +87,50 @@ def profile_generation(netG, nz, device):
 
     netG.train(training)
     return gen_ms
+
+def plot_dcgan_loss(out_dir, g_losses, d_losses):
+    """
+    Plot the losses of the generator and discriminator across all
+    iterations of training
+    """
+
+    plt.figure(figsize=(10,5))
+    plt.title("Generator and Discriminator Loss During Training")
+
+    plt.plot(g_losses,label="G")
+    plt.plot(d_losses,label="D")
+    plt.xlabel("iterations")
+    plt.ylabel("Loss")
+
+    plt.legend()
+    plt.savefig(os.path.join(out_dir, "dcgan_losses.png"), dpi=150)
+    plt.close()
+
+def plot_wgan_curves(out_dir, g_losses, c_losses, W, GP, n_critic):
+    """
+    Plot the generator/critic losses, Wasserstein estimate and gradient
+    penalty across training on one figure. Assumes batches per epoch is
+    divisible by n_critic.
+    """
+
+    c_iters = range(len(c_losses))
+    # critic step at which each G update happened
+    g_iters = [(k + 1) * n_critic - 1 for k in range(len(g_losses))]  
+
+    fig, axes = plt.subplots(3, 1, figsize=(10, 10), sharex=True)
+
+    # Loss plot
+    axes[0].plot(c_iters, c_losses, label="Critic loss", alpha=0.6)
+    axes[0].plot(g_iters, g_losses, label="Generator loss", alpha=0.6)
+    axes[0].legend(); axes[0].set_ylabel("Loss")
+
+    # Wasserstein estimate plot
+    axes[1].plot(c_iters, W); axes[1].set_ylabel("W estimate")
+
+    # Gradient penalty plot
+    axes[2].plot(c_iters, GP); axes[2].set_ylabel("Gradient penalty")
+    axes[2].set_xlabel("Critic iterations")
+
+    plt.tight_layout()
+    plt.savefig(os.path.join(out_dir, "wgan_gp_curves.png"), dpi=150)
+    plt.close()
