@@ -7,22 +7,32 @@ and moved into the correct format.
 import os
 import time
 import torch
+import torch.nn as nn
+import torch.optim as optim
+from dataset import load_data
+from modules import Generator, Discriminator, Critic, weights_init
 from pathlib import Path
 import torchvision.utils as vutils
 import matplotlib.pyplot as plt
 
 BASE = Path(__file__).resolve().parent
 
+NGPU, NC, NDF = 1, 1, 64
+BATCH_SIZE = 128
+N_CRITIC = 5
+LAMBDA_GP = 10
+SAVE_EVERY = 25
+
 # Configurations of the different models that have been tested in this project
 CONFIGS = {
-    "dcgan": dict(model="dcgan", epochs=50, lr=0.0002, betas=(0.5, 0.999), nc=1, nz=100,
-                  ngf=64, ndf=64, downsample=False),
-    "wgan_gp": dict(model="wgan_gp", epochs=250, lr=0.0001, betas=(0.0, 0.9), nc=1, nz=100,
-                  ngf=64, ndf=64, downsample=False),
-    "wgan_gp_extend": dict(model="wgan_gp_extend", epochs=1000, lr=0.0001, betas=(0.0, 0.9), nc=1, nz=100,
-                      ngf=64, ndf=64, downsample=False),
-    "wgan_gp_wide": dict(model="wgan_gp_wide", epochs=1000, lr=0.0001, betas=(0.0, 0.9), nc=1, nz=128,
-                      ngf=128, ndf=64, downsample=True)
+    "dcgan": dict(model="dcgan", epochs=50, lr=0.0002, betas=(0.5, 0.999), nz=100,
+                  ngf=64, downsample=False),
+    "wgan_gp": dict(model="wgan_gp", epochs=250, lr=0.0001, betas=(0.0, 0.9), nz=100,
+                  ngf=64, downsample=False),
+    "wgan_gp_extend": dict(model="wgan_gp_extend", epochs=1000, lr=0.0001, betas=(0.0, 0.9), nz=100,
+                      ngf=64, downsample=False),
+    "wgan_gp_wide": dict(model="wgan_gp_wide", epochs=1000, lr=0.0001, betas=(0.0, 0.9), nz=128,
+                      ngf=128, downsample=True, resume="outputs/wgan_gp_wide/checkpoints/wgan_gp_epoch_250.pt")
 }
 
 
@@ -154,3 +164,116 @@ def save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_t
     # Save text summary for later
     with open(os.path.join(out_dir, "resources.txt"), "w") as f:
         f.write(summary)
+
+def gradient_penalty(critic, real, fake):
+    """Help function that computers WGAN-GP penalty:
+    mean((||grad_x D(x_hat)||_2 - 1)^2)"""
+    epsilon = torch.rand(real.size(0), 1, 1, 1, device=real.device)
+    x_hat = (epsilon * real + (1 - epsilon) * fake).requires_grad_(True)
+    grad = torch.autograd.grad(critic(x_hat).sum(), x_hat, create_graph=True)[0]
+    return ((grad.flatten(1).norm(2, dim=1) - 1) ** 2).mean()
+
+def train_wgan(cfg, name):
+    """
+    For training the WGAN model. Runs can be done fresh or be resumed from
+    a checkpoint
+    """
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    out_dir = setup_out_dir(name)
+    nz, ngf, num_epochs = cfg["nz"], cfg["ngf"], cfg["epochs"]
+
+    train_loader = load_data("train", batch_size=BATCH_SIZE, downsample=cfg["downsample"])
+
+    netG = Generator(NGPU, nz, ngf, NC).to(device)
+    netG.apply(weights_init)
+    netD = Critic(NGPU, NDF, NC).to(device)
+    netD.apply(weights_init)
+
+    optimiserG = optim.Adam(netG.parameters(), lr=cfg["lr"], betas=cfg["betas"])
+    optimiserD = optim.Adam(netD.parameters(), lr=cfg["lr"], betas=cfg["betas"])
+
+    # Fixed noise for the per-epoch sample grids (seeded so it is reproducible)
+    fixed_noise = torch.randn(16, nz, 1, 1, generator=torch.Generator().manual_seed(0)).to(device)
+
+    G_losses, D_losses, W_estimates, GP_values, epoch_times = [], [], [], [], []
+    start_epoch = 0
+
+    # Optionally continue an earlier run (weights, optimiser state and loss histories)
+    if cfg.get("resume"):
+        model = torch.load(BASE / cfg["resume"], map_location=device)
+
+        netG.load_state_dict(model["netG"])
+        netD.load_state_dict(model["netD"])
+        optimiserG.load_state_dict(model["optG"])
+        optimiserD.load_state_dict(model["optD"])
+
+        G_losses, D_losses = model["G_losses"], model["D_losses"]
+        GP_values, W_estimates = model["GP_values"], model["W_estimates"]
+        start_epoch = model["epoch"]
+
+        print(f"Resumed from {cfg['resume']} at epoch {start_epoch}")
+
+    gpu_name = torch.cuda.get_device_name(0) if device.type == "cuda" else "CPU"
+    n_params_G = sum(p.numel() for p in netG.parameters())
+    n_params_D = sum(p.numel() for p in netD.parameters())
+    
+    if device.type == "cuda":
+        torch.cuda.reset_peak_memory_stats()
+
+    print(f"Training {name}: epochs {start_epoch}->{num_epochs} on {gpu_name}")
+    for epoch in range(start_epoch, num_epochs):
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        t0 = time.time()
+
+        for i, data in enumerate(train_loader):
+            # (1) Critic update: D(G(z)) - D(x) + lambda * GP
+            real = data.to(device)
+            b_size = real.size(0)
+            fake = netG(torch.randn(b_size, nz, 1, 1, device=device)).detach()
+
+            gp = gradient_penalty(netD, real, fake)
+            d_real = netD(real).mean()
+            d_fake = netD(fake).mean()
+            loss_D = d_fake - d_real + LAMBDA_GP * gp
+
+            optimiserD.zero_grad()
+            loss_D.backward()
+            optimiserD.step()
+
+            W_estimates.append((d_real - d_fake).item())
+            GP_values.append(gp.item())
+            D_losses.append(loss_D.item())
+
+            # (2) Generator update every N_CRITIC critic steps: minimise -D(G(z))
+            if (i + 1) % N_CRITIC == 0:
+                loss_G = -netD(netG(torch.randn(b_size, nz, 1, 1, device=device))).mean()
+                optimiserG.zero_grad()
+                loss_G.backward()
+                optimiserG.step()
+                G_losses.append(loss_G.item())
+
+            if i % 50 == 0:
+                print(f"[{epoch}/{num_epochs}][{i}/{len(train_loader)}]  "
+                      f"Loss_D: {loss_D.item():.4f}  W: {W_estimates[-1]:.4f}  GP: {gp.item():.4f}")
+
+        if device.type == "cuda":
+            torch.cuda.synchronize()
+        epoch_times.append(time.time() - t0)
+        print(f"Epoch {epoch + 1} took {epoch_times[-1]:.1f} s")
+
+        save_sample_grid(netG, fixed_noise, out_dir, epoch)
+
+        if (epoch + 1) % SAVE_EVERY == 0 or epoch == num_epochs - 1:
+            save_checkpoint(out_dir, "wgan_gp", epoch, {
+                "netG": netG.state_dict(), "netD": netD.state_dict(),
+                "optG": optimiserG.state_dict(), "optD": optimiserD.state_dict(),
+                "G_losses": G_losses, "D_losses": D_losses,
+                "GP_values": GP_values, "W_estimates": W_estimates,
+            })
+
+    peak_vram = torch.cuda.max_memory_allocated() / 2**20 if device.type == "cuda" else float("nan")
+    gen_ms = profile_generation(netG, nz, device)
+    save_resources(out_dir, gpu_name, n_params_G, n_params_D, peak_vram, epoch_times, gen_ms)
+    plot_wgan_curves(out_dir, G_losses, D_losses, W_estimates, GP_values, N_CRITIC)
+    return netG, netD
